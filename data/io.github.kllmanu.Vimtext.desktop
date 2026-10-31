@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Vimtext
+Comment=Edit text files with Vim keybindings
+Exec=vimtext %F
+Icon=accessories-text-editor
+Terminal=false
+Type=Application
+StartupNotify=true
+DBusActivatable=false
+Categories=GNOME;GTK;Utility;TextEditor;
+Keywords=text;editor;vim;
+MimeType=text/plain;
