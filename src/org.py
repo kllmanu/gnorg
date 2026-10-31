@@ -614,6 +614,108 @@ def todo_list(entries):
     return todos
 
 
+# ---------- Text agenda (laid out like Emacs' org-agenda) ----------
+
+AGENDA_WIDTH = 80
+CATEGORY_WIDTH = 12
+TIME_WIDTH = 12
+
+
+@dataclass
+class AgendaLine:
+    text: str
+    kind: str = "text"  # structure, date, item, separator, text
+    entry: "Entry | None" = None
+    date: "dt.date | None" = None
+    spans: list = field(default_factory=list)  # [(start, end, style)]
+
+
+def category(entry):
+    return os.path.splitext(os.path.basename(entry.path))[0] if entry.path else "???"
+
+
+def _agenda_leader(item):
+    if item.kind == "scheduled":
+        return "Scheduled: ", "scheduled"
+    if item.kind == "scheduled-overdue":
+        return f"Sched.{item.days:2d}x: ", "scheduled-previously"
+    if item.kind == "deadline":
+        return "Deadline:  ", "deadline"
+    if item.kind == "deadline-overdue":
+        return f"{item.days:2d} d. ago: ", "deadline"
+    if item.kind == "deadline-upcoming":
+        return f"In {item.days:3d} d.: ", "upcoming-deadline"
+    return "", None
+
+
+def _agenda_time(ts):
+    if not ts or not ts.time:
+        return ""
+    label = f"{ts.time.hour:2d}:{ts.time.minute:02d}"
+    if ts.end_time:
+        return f"{label}-{ts.end_time.hour}:{ts.end_time.minute:02d}"
+    return label + "......"
+
+
+def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AGENDA_WIDTH):
+    """'  tasks:      10:00...... Scheduled:  TODO [#A] Title                 :tag:'"""
+    spans = []
+    text = "  " + f"{category(entry)[:CATEGORY_WIDTH - 1] + ':':<{CATEGORY_WIDTH}}"
+    spans.append((2, len(text), "category"))
+    if time_text:
+        spans.append((len(text), len(text) + len(time_text), "time"))
+        text += f"{time_text:<{TIME_WIDTH}}"
+    if leader:
+        spans.append((len(text), len(text) + len(leader.rstrip()), leader_style))
+        text += leader + " "
+    title_start = len(text)
+    if entry.keyword:
+        style = "done" if entry.is_done else "todo"
+        spans.append((len(text), len(text) + len(entry.keyword), style))
+        text += entry.keyword + " "
+    if entry.priority:
+        spans.append((len(text), len(text) + 4, "priority"))
+        text += f"[#{entry.priority}] "
+    text += entry.display_title
+    if entry.is_done:
+        spans.append((title_start, len(text), "agenda-done"))
+    if entry.tags:
+        tags = ":" + ":".join(entry.tags) + ":"
+        text += " " * max(1, width - len(text) - len(tags))
+        spans.append((len(text), len(text) + len(tags), "tag"))
+        text += tags
+    return AgendaLine(text, "item", entry, spans=spans)
+
+
+def agenda_date_line(date, today, first=False):
+    week = f" W{date.isocalendar().week:02d}" if first or date.weekday() == 0 else ""
+    text = f"{DAY_NAMES[date.weekday()]:<10} {date.day:2d} {MONTH_NAMES[date.month - 1]} {date.year}{week}"
+    style = "agenda-date-today" if date == today else (
+        "agenda-date-weekend" if date.weekday() >= 5 else "agenda-date")
+    return AgendaLine(text, "date", date=date, spans=[(0, len(text), style)])
+
+
+def format_agenda(entries, start, days, today, with_todos=True, width=AGENDA_WIDTH):
+    """The combined agenda (Emacs `C-c a n`): a day/week agenda followed by all TODO items."""
+    def structure(text):
+        return AgendaLine(text, "structure", spans=[(0, len(text), "agenda-structure")])
+
+    week = start.isocalendar().week
+    lines = [structure(f"{'Week' if days == 7 else 'Day' if days == 1 else f'{days} days'}-agenda (W{week:02d}):")]
+    for i, (date, items) in enumerate(build_agenda(entries, start, days, today).items()):
+        lines.append(agenda_date_line(date, today, first=i == 0))
+        for item in items:
+            leader, style = _agenda_leader(item)
+            line = agenda_item_line(item.entry, leader, style, _agenda_time(item.ts), width)
+            line.date = date
+            lines.append(line)
+    if with_todos:
+        lines.append(AgendaLine("=" * width, "separator", spans=[(0, width, "agenda-separator")]))
+        lines.append(structure("Global list of TODO items of type: ALL"))
+        lines.extend(agenda_item_line(e, width=width) for e in todo_list(entries))
+    return lines
+
+
 def find_org_files(directory):
     """All *.org files below `directory`, skipping hidden files and folders."""
     result = []

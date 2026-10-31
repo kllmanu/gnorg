@@ -35,4 +35,16 @@
   <style name="org:block" foreground="#4e57ba"/>
   <style name="org:drawer" foreground="grey"/>
   <style name="org:table" foreground="#4e57ba"/>
+
+  <!-- Text agenda -->
+  <style name="org:agenda-structure" foreground="blue" bold="true"/>
+  <style name="org:agenda-date" foreground="blue" bold="true"/>
+  <style name="org:agenda-date-weekend" foreground="blue" bold="true"/>
+  <style name="org:agenda-date-today" foreground="blue" bold="true" italic="true" underline="single"/>
+  <style name="org:agenda-separator" foreground="grey"/>
+  <style name="org:agenda-done" foreground="grey"/>
+  <style name="org:scheduled" foreground="green"/>
+  <style name="org:scheduled-previously" foreground="orange"/>
+  <style name="org:deadline" foreground="red" bold="true"/>
+  <style name="org:upcoming-deadline" foreground="orange"/>
 </style-scheme>

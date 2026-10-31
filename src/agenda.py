@@ -1,4 +1,4 @@
-"""The agenda window: a week view of scheduled items/deadlines/events and a global TODO list."""
+"""The agenda: a read-only text buffer laid out like Emacs' org-agenda (`C-c a n`)."""
 
 import datetime as dt
 import os
@@ -7,271 +7,257 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+gi.require_version("GtkSource", "5")
+gi.require_version("Graphene", "1.0")
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
+from datepicker import DatePopover  # noqa: E402
 
-KIND_CLASSES = {
-    "deadline": "error",
-    "deadline-overdue": "error",
-    "deadline-upcoming": "warning",
-    "scheduled-overdue": "warning",
-    "scheduled": "accent",
-}
+STYLES = ("agenda-structure", "agenda-date", "agenda-date-weekend", "agenda-date-today",
+          "agenda-separator", "agenda-done", "scheduled", "scheduled-previously", "deadline",
+          "upcoming-deadline", "todo", "done", "priority", "tag")
+
+HINTS = "⏎ open  t todo  f/b later/earlier  . today  d/w day/week  r redo  q quit"
 
 
 class AgendaWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Agenda", default_width=720, default_height=780)
+        super().__init__(application=app, title="Agenda", default_width=780, default_height=720)
         self.app = app
-        self.week = org.week_start(dt.date.today())
+        self.span = 7
+        self.start = org.week_start(dt.date.today())
+        self.lines = []
+        self.tags = {}
+        self._message_id = 0
 
-        self.stack = Adw.ViewStack()
-        self.week_box, week_page = self._scrolled_page()
-        self.todo_box, todo_page = self._scrolled_page()
-        self.stack.add_titled_with_icon(week_page, "week", "Week", "x-office-calendar-symbolic")
-        self.stack.add_titled_with_icon(todo_page, "todo", "To Do", "object-select-symbolic")
-        self.stack.connect("notify::visible-child-name", lambda *_: self._update_nav())
+        self.buffer = GtkSource.Buffer(highlight_syntax=False, highlight_matching_brackets=False)
+        self.view = GtkSource.View(
+            buffer=self.buffer, editable=False, cursor_visible=True, monospace=True,
+            highlight_current_line=True, css_classes=["vimtext-editor"],
+            top_margin=8, bottom_margin=8, left_margin=8, right_margin=8)
+        scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True)
+        self.view_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.view_box.append(scroller)
 
-        header = Adw.HeaderBar(title_widget=Adw.ViewSwitcher(
-            stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE))
-        self.nav = Gtk.Box(spacing=6)
-        self.nav.append(Gtk.Button(icon_name="go-previous-symbolic", tooltip_text="Previous Week (B)",
-                                   action_name="agenda.prev"))
-        self.nav.append(Gtk.Button(label="Today", tooltip_text="This Week (.)", action_name="agenda.today"))
-        self.nav.append(Gtk.Button(icon_name="go-next-symbolic", tooltip_text="Next Week (F)",
-                                   action_name="agenda.next"))
-        header.pack_start(self.nav)
+        self.title_widget = Adw.WindowTitle(title="Agenda")
+        header = Adw.HeaderBar(title_widget=self.title_widget)
+        self.status = Gtk.Label(label=HINTS, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                                css_classes=["monospace", "dim-label"])
+        status_box = Gtk.Box(margin_start=12, margin_end=12, margin_top=4, margin_bottom=4)
+        status_box.append(self.status)
 
-        self.status = Adw.StatusPage(icon_name="folder-documents-symbolic", title="No Org Files")
-        choose = Gtk.Button(label="Choose Folder…", halign=Gtk.Align.CENTER,
-                            css_classes=["pill", "suggested-action"], action_name="app.preferences")
-        self.status.set_child(choose)
-
-        self.content = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
-        self.content.add_named(self.stack, "agenda")
-        self.content.add_named(self.status, "empty")
-
-        toolbar_view = Adw.ToolbarView(content=self.content)
+        toolbar_view = Adw.ToolbarView(content=self.view_box)
         toolbar_view.add_top_bar(header)
-        self.toasts = Adw.ToastOverlay(child=toolbar_view)
-        self.set_content(self.toasts)
+        toolbar_view.add_bottom_bar(status_box)
+        self.set_content(toolbar_view)
 
-        self._setup_actions()
-        self.connect("notify::is-active", lambda *_: self.is_active() and self.refresh())
-        self.refresh()
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key_pressed)
+        self.view.add_controller(keys)
+        clicks = Gtk.GestureClick()
+        clicks.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.open_entry())
+        self.view.add_controller(clicks)
 
-    def _scrolled_page(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18,
-                      margin_top=18, margin_bottom=24, margin_start=12, margin_end=12)
-        clamp = Adw.Clamp(child=box, maximum_size=760)
-        return box, Gtk.ScrolledWindow(child=clamp, hscrollbar_policy=Gtk.PolicyType.NEVER)
-
-    def _setup_actions(self):
-        group = Gio.SimpleActionGroup()
-        for name, callback in (
-            ("prev", lambda: self._move_week(-7)),
-            ("next", lambda: self._move_week(7)),
-            ("today", lambda: self._move_week(None)),
-            ("refresh", self.refresh),
-        ):
+        for name, callback in (("todo", self.cycle_todo),
+                               ("schedule", lambda: self.edit_planning("SCHEDULED")),
+                               ("deadline", lambda: self.edit_planning("DEADLINE"))):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", lambda _a, _p, cb=callback: cb())
-            group.add_action(action)
-        self.insert_action_group("agenda", group)
+            self.add_action(action)
 
-        shortcuts = Gtk.ShortcutController(scope=Gtk.ShortcutScope.LOCAL)
-        for trigger, action in (
-            ("<Alt>Left|b", "agenda.prev"),
-            ("<Alt>Right|f", "agenda.next"),
-            ("period|t|<Alt>Home", "agenda.today"),
-            ("r|F5", "agenda.refresh"),
-            ("Escape", "window.close"),
-        ):
-            shortcuts.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string(trigger),
-                                                    Gtk.NamedAction.new(action)))
-        self.add_controller(shortcuts)
-
-    def _move_week(self, days):
-        self.week = org.week_start(dt.date.today()) if days is None else self.week + dt.timedelta(days=days)
-        self.stack.set_visible_child_name("week")
+        style_manager = Adw.StyleManager.get_default()
+        handler = style_manager.connect("notify::dark", lambda *_: self._update_scheme())
+        self.connect("destroy", lambda *_: style_manager.disconnect(handler))
+        self.connect("notify::is-active", lambda *_: self.is_active() and self.refresh())
+        self._update_scheme(render=False)
         self.refresh(keep_scroll=False)
-
-    def _update_nav(self):
-        self.nav.set_visible(self.stack.get_visible_child_name() == "week")
 
     # ---------- Rendering ----------
 
+    def _update_scheme(self, render=True):
+        dark = Adw.StyleManager.get_default().get_dark()
+        schemes = GtkSource.StyleSchemeManager.get_default()
+        scheme = schemes.get_scheme("vimtext-dark" if dark else "vimtext") or \
+            schemes.get_scheme("Adwaita-dark" if dark else "Adwaita")
+        self.buffer.set_style_scheme(scheme)
+        table = self.buffer.get_tag_table()
+        for tag in self.tags.values():
+            table.remove(tag)
+        self.tags = {}
+        for name in STYLES:
+            tag = self.buffer.create_tag(None)
+            style = scheme.get_style("org:" + name) if scheme else None
+            if style:
+                style.apply(tag)
+            self.tags[name] = tag
+        if render:
+            self.lines = []  # the tags were recreated, so re-render even if nothing changed
+            self.refresh()
+
     def refresh(self, keep_scroll=True):
         directory, files, entries = self.app.agenda_entries()
-        if not files:
-            if directory and os.path.isdir(directory):
-                self.status.set_description(f"There are no .org files in {self._short(directory)} yet.")
-            else:
-                self.status.set_description(f"The agenda folder {self._short(directory)} doesn’t exist.")
-            self.content.set_visible_child_name("empty")
-            self.nav.set_visible(False)
-            return
-        self.content.set_visible_child_name("agenda")
-        self._update_nav()
-        self.directory = directory
-
-        scrolls = [self._scroll_of(self.week_box), self._scroll_of(self.todo_box)]
-        positions = [s.get_value() for s in scrolls]
         today = dt.date.today()
-        self._render_week(entries, today)
-        self._render_todos(entries, today)
-        if keep_scroll:
-            def restore():
-                for s, v in zip(scrolls, positions):
-                    s.set_value(v)
-                return False
-            GLib.idle_add(restore)
+        self.title_widget.set_subtitle(self._short(directory))
+        if files:
+            lines = org.format_agenda(entries, self.start, self.span, today)
         else:
-            scrolls[0].set_value(0)
-
-    @staticmethod
-    def _scroll_of(box):
-        return box.get_ancestor(Gtk.ScrolledWindow).get_vadjustment()
-
-    @staticmethod
-    def _clear(box):
-        while child := box.get_first_child():
-            box.remove(child)
-
-    def _render_week(self, entries, today):
-        self._clear(self.week_box)
-        start, end = self.week, self.week + dt.timedelta(days=6)
-        agenda = org.build_agenda(entries, start, 7, today)
-
-        title = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        if start.month == end.month:
-            span = f"{start.day} – {end.day} {org.MONTH_NAMES[end.month - 1]} {end.year}"
-        elif start.year == end.year:
-            span = f"{start.day} {org.MONTH_ABBR[start.month - 1]} – {end.day} {org.MONTH_ABBR[end.month - 1]} {end.year}"
-        else:
-            span = f"{org.format_date(start, with_year=True)} – {org.format_date(end, with_year=True)}"
-        title.append(Gtk.Label(label=span, xalign=0, css_classes=["title-2"]))
-        title.append(Gtk.Label(label=f"Week {start.isocalendar().week}", xalign=0, css_classes=["dim-label"]))
-        self.week_box.append(title)
-
-        for date, items in agenda.items():
-            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            header = Gtk.Box(spacing=8)
-            header.append(Gtk.Label(label=org.DAY_NAMES[date.weekday()], xalign=0,
-                                    css_classes=["heading", "accent"] if date == today else ["heading"]))
-            header.append(Gtk.Label(label=f"{date.day} {org.MONTH_NAMES[date.month - 1]}",
-                                    xalign=0, css_classes=["dim-label"]))
-            if date == today:
-                header.append(Gtk.Label(label="Today", css_classes=["caption-heading", "accent"]))
-            section.append(header)
-
-            if items:
-                listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
-                for item in items:
-                    listbox.append(self._agenda_row(item, today))
-                section.append(listbox)
-            else:
-                section.append(Gtk.Label(label="Nothing scheduled", xalign=0,
-                                         css_classes=["dim-label", "caption"], margin_start=2))
-            self.week_box.append(section)
-
-    def _render_todos(self, entries, today):
-        self._clear(self.todo_box)
-        todos = org.todo_list(entries)
-        if not todos:
-            self.todo_box.append(Adw.StatusPage(icon_name="object-select-symbolic", title="Nothing To Do",
-                                                description="Open tasks marked TODO show up here",
-                                                vexpand=True))
+            reason = "doesn’t exist" if not os.path.isdir(directory) else "has no .org files"
+            lines = [org.AgendaLine(f"The agenda folder {self._short(directory)} {reason}."),
+                     org.AgendaLine(""),
+                     org.AgendaLine("Choose another one in Preferences (Ctrl+,).")]
+        if lines == self.lines and keep_scroll:
             return
-        by_file = {}
-        for e in todos:
-            by_file.setdefault(e.path, []).append(e)
-        for path in sorted(by_file, key=lambda p: self._relative(p).lower()):
-            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            section.append(Gtk.Label(label=self._relative(path), xalign=0, css_classes=["heading"]))
-            listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
-            for e in by_file[path]:
-                parts = []
-                if e.scheduled:
-                    parts.append(f"Scheduled {org.format_date(e.scheduled.date, today)}")
-                if e.deadline:
-                    parts.append(f"Deadline {org.format_date(e.deadline.date, today)}")
-                badge = None
-                if e.deadline and e.deadline.date < today:
-                    badge = ("Overdue", "error")
-                elif e.deadline and e.deadline.date == today:
-                    badge = ("Due today", "error")
-                listbox.append(self._row(e, parts, badge, show_file=False))
-            section.append(listbox)
-            self.todo_box.append(section)
+        self.lines = lines
 
-    def _agenda_row(self, item, today):
-        parts = []
-        if t := item.ts.time_label():
-            parts.append(t)
-        badge = (item.label, KIND_CLASSES[item.kind]) if item.label else None
-        if item.kind == "deadline-upcoming":
-            parts.append(f"Deadline {org.format_date(item.ts.date, today)}")
-        return self._row(item.entry, parts, badge)
+        cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        line, column = cursor.get_line(), cursor.get_line_offset()
+        adjustment = self.view.get_vadjustment()
+        scroll = adjustment.get_value() if adjustment else 0
 
-    def _row(self, entry, parts, badge=None, show_file=True):
-        title = GLib.markup_escape_text(entry.display_title or "(untitled)")
-        if entry.is_done:
-            title = f"<s>{title}</s>"
-        row = Adw.ActionRow(title=title, activatable=True, use_markup=True,
-                            title_lines=2, subtitle_lines=1)
-        if entry.tags:
-            parts = [*parts, " ".join(f"#{t}" for t in entry.tags)]
-        if show_file:
-            parts = [*parts, self._relative(entry.path)]
-        row.set_subtitle(GLib.markup_escape_text(" · ".join(parts)))
-        if entry.is_done:
-            row.add_css_class("dim-label")
+        self.buffer.set_text("\n".join(l.text for l in self.lines))
+        for i, agenda_line in enumerate(self.lines):
+            for start, end, style in agenda_line.spans:
+                if style in self.tags:
+                    a = self.buffer.get_iter_at_line_offset(i, start)[1]
+                    b = self.buffer.get_iter_at_line_offset(i, end)[1]
+                    self.buffer.apply_tag(self.tags[style], a, b)
 
-        if entry.keyword:
-            check = Gtk.CheckButton(active=entry.is_done, valign=Gtk.Align.CENTER,
-                                    tooltip_text="Mark as Not Done" if entry.is_done else "Mark as Done")
-            check.connect("toggled", self._on_check_toggled, entry)
-            row.add_prefix(check)
+        if keep_scroll:
+            self._place_cursor(min(line, len(self.lines) - 1), column)
+            if adjustment:
+                GLib.idle_add(lambda: adjustment.set_value(scroll) and False)
         else:
-            row.add_prefix(Gtk.Image(icon_name="x-office-calendar-symbolic", css_classes=["dim-label"],
-                                     margin_start=2, margin_end=2))
+            target = next((i for i, l in enumerate(self.lines) if l.kind == "date" and l.date == today), 0)
+            self._place_cursor(target, 0)
+            GLib.idle_add(self._scroll_to_cursor)
 
-        if entry.priority:
-            row.add_suffix(Gtk.Label(label=entry.priority, valign=Gtk.Align.CENTER,
-                                     tooltip_text=f"Priority {entry.priority}",
-                                     css_classes=["caption-heading", "warning" if entry.priority == "A" else "dim-label"]))
-        if badge:
-            row.add_suffix(Gtk.Label(label=badge[0], valign=Gtk.Align.CENTER,
-                                     css_classes=["caption-heading", badge[1]]))
-        row.add_suffix(Gtk.Image(icon_name="go-next-symbolic", css_classes=["dim-label"]))
-        row.connect("activated", lambda *_: self.app.open_location(entry.path, entry.line))
-        return row
+    def _place_cursor(self, line, column=0):
+        ok, it = self.buffer.get_iter_at_line(max(line, 0))
+        if ok:
+            end = it.copy()
+            if not end.ends_line():
+                end.forward_to_line_end()
+            it.set_line_offset(min(column, end.get_line_offset()))
+            self.buffer.place_cursor(it)
 
-    def _on_check_toggled(self, check, entry):
-        keyword = org.DONE_KEYWORDS[0] if check.get_active() else org.TODO_KEYWORDS[0]
-        message = self.app.set_entry_keyword(entry, keyword)
-        if message:
-            self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
-        # Rows are rebuilt on refresh, so don't destroy this one while its signal runs
-        GLib.idle_add(self._refresh_idle)
-
-    def _refresh_idle(self):
-        self.refresh()
+    def _scroll_to_cursor(self):
+        self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, False, 0, 0)
         return False
 
-    def _relative(self, path):
-        if not path:
-            return ""
-        directory = getattr(self, "directory", None)
-        if directory and path.startswith(directory.rstrip(os.sep) + os.sep):
-            return os.path.relpath(path, directory)
-        return self._short(path)
+    def message(self, text):
+        """Show a message in the status line for a while, like Emacs' echo area."""
+        self.status.set_label(text)
+        if self._message_id:
+            GLib.source_remove(self._message_id)
+
+        def reset():
+            self._message_id = 0
+            self.status.set_label(HINTS)
+            return False
+
+        self._message_id = GLib.timeout_add_seconds(4, reset)
+
+    # ---------- Commands ----------
+
+    def _on_key_pressed(self, _controller, keyval, _keycode, state):
+        if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):
+            return False
+        name = Gdk.keyval_name(keyval)
+        commands = {
+            "n": lambda: self._move(1), "j": lambda: self._move(1),
+            "p": lambda: self._move(-1), "k": lambda: self._move(-1),
+            "Return": self.open_entry, "KP_Enter": self.open_entry, "Tab": self.open_entry,
+            "o": self.open_entry,
+            "t": self.cycle_todo,
+            "f": lambda: self.shift(1), "b": lambda: self.shift(-1),
+            "period": self.goto_today,
+            "d": lambda: self.set_span(1), "w": lambda: self.set_span(7),
+            "r": self.refresh, "g": self.refresh,
+            "q": self.close, "x": self.close, "Escape": self.close,
+        }
+        command = commands.get(name)
+        if command is None:
+            return False
+        command()
+        return True
+
+    def _move(self, delta):
+        line = self.buffer.get_iter_at_mark(self.buffer.get_insert()).get_line()
+        self._place_cursor(max(0, min(len(self.lines) - 1, line + delta)), 0)
+        self._scroll_to_cursor()
+
+    def shift(self, direction):
+        self.start += dt.timedelta(days=self.span * direction)
+        self.refresh(keep_scroll=False)
+
+    def goto_today(self):
+        today = dt.date.today()
+        self.start = org.week_start(today) if self.span == 7 else today
+        self.refresh(keep_scroll=False)
+
+    def set_span(self, days):
+        self.span = days
+        self.goto_today()
+
+    def current_entry(self):
+        line = self.buffer.get_iter_at_mark(self.buffer.get_insert()).get_line()
+        entry = self.lines[line].entry if 0 <= line < len(self.lines) else None
+        if entry is None:
+            self.message("Command not allowed in this line")
+        return entry
+
+    def open_entry(self):
+        if entry := self.current_entry():
+            self.app.open_location(entry.path, entry.line)
+
+    def cycle_todo(self):
+        entry = self.current_entry()
+        if entry is None:
+            return
+        cycle = [None, *org.ALL_KEYWORDS]
+        keyword = cycle[(cycle.index(entry.keyword) + 1) % len(cycle)]
+        message = self.app.edit_entry(
+            entry, lambda lines, i: org.set_todo_keyword(lines, i, keyword, dt.date.today()))
+        self.refresh()
+        self.message(message or f"{entry.display_title}: {keyword or 'no keyword'}")
+
+    def edit_planning(self, kind):
+        entry = self.current_entry()
+        if entry is None:
+            return
+        initial = entry.scheduled if kind == "SCHEDULED" else entry.deadline
+        today = dt.date.today()
+        popover = DatePopover("Schedule" if kind == "SCHEDULED" else "Deadline", initial, today)
+        popover.set_parent(self.view_box)
+        popover.set_pointing_to(self._cursor_rect())
+
+        def on_apply(_popover, ts):
+            message = self.app.edit_entry(entry, lambda lines, i: (org.set_planning(lines, i, kind, ts), None))
+            self.refresh()
+            what = "Scheduled" if kind == "SCHEDULED" else "Deadline"
+            self.message(message or (f"{what}: {ts.describe(today)}" if ts else f"{what} removed"))
+
+        def on_closed(p):
+            self.view.grab_focus()
+            GLib.idle_add(lambda: p.unparent() and False)
+
+        popover.connect("apply", on_apply)
+        popover.connect("closed", on_closed)
+        popover.popup()
+
+    def _cursor_rect(self):
+        location = self.view.get_iter_location(self.buffer.get_iter_at_mark(self.buffer.get_insert()))
+        x, y = self.view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, location.x, location.y)
+        _ok, point = self.view.compute_point(self.view_box, Graphene.Point().init(x, y))
+        rect = Gdk.Rectangle()
+        rect.x, rect.y = int(point.x), int(point.y)
+        rect.width, rect.height = max(location.width, 1), location.height
+        return rect
 
     @staticmethod
     def _short(path):
         home = GLib.get_home_dir()
-        if path and path.startswith(home):
+        if path and (path == home or path.startswith(home + os.sep)):
             return "~" + path[len(home):]
         return path or ""

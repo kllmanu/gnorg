@@ -323,13 +323,13 @@ class EditorWindow(Adw.ApplicationWindow):
         if message:
             self.toast(message)
 
-    def set_keyword(self, line, heading_text, keyword):
-        """Used by the agenda. Returns (ok, message)."""
+    def edit_heading(self, line, heading_text, change):
+        """Used by the agenda; change(lines, idx) returns (edit, message). Returns (ok, message)."""
         lines = self.get_text().split("\n")
         idx = locate_heading(lines, line, heading_text)
         if idx is None:
             return False, None
-        edit, message = org.set_todo_keyword(lines, idx, keyword, dt.date.today())
+        edit, message = change(lines, idx)
         self.apply_edit(edit)
         return True, message
 
@@ -719,11 +719,14 @@ class VimtextApplication(Adw.Application):
     def open_location(self, path, line):
         self.open_file(Gio.File.new_for_path(path), lambda win: win.goto_line(line))
 
-    def set_entry_keyword(self, entry, keyword):
-        """Change an entry's TODO state from the agenda. Returns a message to show, if any."""
+    def edit_entry(self, entry, change):
+        """Edit an agenda entry's heading, in its open window or on disk.
+
+        change(lines, idx) returns (edit, message). Returns a message to show, if any.
+        """
         win = self.window_for_path(entry.path)
         if win:
-            ok, message = win.set_keyword(entry.line, entry.heading_text, keyword)
+            ok, message = win.edit_heading(entry.line, entry.heading_text, change)
             return message if ok else "The heading was not found, refresh the agenda"
         try:
             with open(entry.path, encoding="utf-8") as f:
@@ -731,7 +734,7 @@ class VimtextApplication(Adw.Application):
             idx = locate_heading(lines, entry.line, entry.heading_text)
             if idx is None:
                 return "The heading was not found, refresh the agenda"
-            edit, message = org.set_todo_keyword(lines, idx, keyword, dt.date.today())
+            edit, message = change(lines, idx)
             lines = org.apply_edit(lines, edit)
             tmp = entry.path + ".vimtext-tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -744,13 +747,16 @@ class VimtextApplication(Adw.Application):
     def show_agenda(self):
         if self.agenda is None:
             self.agenda = AgendaWindow(self)
-            self.agenda.connect("destroy", self._on_agenda_destroyed)
+            # The window is only disposed once this reference is dropped, so let go on close
+            self.agenda.connect("close-request", self._on_agenda_closed)
         self.agenda.refresh(keep_scroll=False)
         self.agenda.present()
+        self.agenda.view.grab_focus()
 
-    def _on_agenda_destroyed(self, win):
+    def _on_agenda_closed(self, win):
         if self.agenda is win:
             self.agenda = None
+        return False
 
     def queue_agenda_refresh(self):
         if self.agenda is None or self._agenda_refresh_id:
@@ -811,10 +817,14 @@ class VimtextApplication(Adw.Application):
                      ("Schedule", "<Ctrl><Shift>e"),
                      ("Set deadline", "<Ctrl><Shift>d"),
                      ("Open agenda", "<Ctrl><Shift>a"))),
-            ("Agenda", (("Previous / next week", "b f"),
+            ("Agenda", (("Open entry", "Return"),
+                        ("Cycle TODO state", "t"),
+                        ("Next / previous line", "n p"),
+                        ("Later / earlier", "f b"),
                         ("Go to today", "period"),
-                        ("Refresh", "r"),
-                        ("Close", "Escape"))),
+                        ("Day / week view", "d w"),
+                        ("Redo (refresh)", "r"),
+                        ("Quit", "q"))),
             ("Files", (("New window", "<Ctrl>n"),
                        ("Open", "<Ctrl>o"),
                        ("Save", "<Ctrl>s"),

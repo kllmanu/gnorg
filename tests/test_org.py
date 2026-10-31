@@ -225,5 +225,57 @@ class AgendaTests(unittest.TestCase):
             self.assertEqual([os.path.relpath(f, d) for f in org.find_org_files(d)], ["a.org", "sub/c.org"])
 
 
+class TextAgendaTests(unittest.TestCase):
+    DOC = """* TODO [#A] Write report :work:
+  SCHEDULED: <2026-10-31 Sat 10:00>
+* TODO Pay rent
+  DEADLINE: <2026-11-01 Sun>
+* TODO Old task
+  SCHEDULED: <2026-10-28 Wed>
+* DONE Finished
+  SCHEDULED: <2026-10-30 Fri>
+"""
+
+    def render(self, **kw):
+        entries = org.parse_entries(self.DOC, "/x/tasks.org")
+        return org.format_agenda(entries, org.week_start(TODAY), 7, TODAY, **kw)
+
+    def test_emacs_layout(self):
+        text = [l.text for l in self.render()]
+        self.assertEqual(text[0], "Week-agenda (W44):")
+        self.assertEqual(text[1], "Monday     26 October 2026 W44")
+        sat = text.index("Saturday   31 October 2026")
+        self.assertEqual(text[sat + 1],
+                         "  tasks:      10:00...... Scheduled:  TODO [#A] Write report" .ljust(74) + ":work:")
+        self.assertEqual(text[sat + 2], "  tasks:      Sched. 3x:  TODO Old task")
+        self.assertEqual(text[sat + 3], "  tasks:      In   1 d.:  TODO Pay rent")
+        self.assertIn("  tasks:      Scheduled:  DONE Finished", text)
+        self.assertIn("  tasks:      Deadline:   TODO Pay rent", text)
+        sep = text.index("=" * 80)
+        self.assertEqual(text[sep + 1], "Global list of TODO items of type: ALL")
+        self.assertEqual(text[sep + 2].rstrip(":work").rstrip(), "  tasks:      TODO [#A] Write report")
+        self.assertEqual(len(text), sep + 5)
+
+    def test_lines_carry_entries_and_styles(self):
+        lines = self.render(with_todos=False)
+        self.assertNotIn("separator", {l.kind for l in lines})
+        today = next(l for l in lines if l.kind == "date" and l.date == TODAY)
+        self.assertEqual(today.spans[0][2], "agenda-date-today")
+        item = lines[lines.index(today) + 1]
+        self.assertEqual(item.entry.title, "Write report")
+        styles = {st: item.text[a:b] for a, b, st in item.spans}
+        self.assertEqual(styles["todo"], "TODO")
+        self.assertEqual(styles["priority"], "[#A]")
+        self.assertEqual(styles["scheduled"], "Scheduled:")
+        self.assertEqual(styles["tag"], ":work:")
+
+    def test_day_view(self):
+        entries = org.parse_entries(self.DOC, "/x/tasks.org")
+        lines = org.format_agenda(entries, TODAY, 1, TODAY, with_todos=False)
+        self.assertEqual(lines[0].text, "Day-agenda (W44):")
+        self.assertEqual(lines[1].text, "Saturday   31 October 2026 W44")
+        self.assertEqual(len(lines), 5)
+
+
 if __name__ == "__main__":
     unittest.main()
