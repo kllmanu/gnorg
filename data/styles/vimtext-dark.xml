@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="vimtext-dark" name="Vimtext Dark" version="1.0" parent-scheme="Adwaita-dark">
+  <description>Adwaita Dark with Org mode styles</description>
+
+  <color name="blue" value="#62a0ea"/>
+  <color name="orange" value="#ffa348"/>
+  <color name="green" value="#8ff0a4"/>
+  <color name="purple" value="#dc8add"/>
+  <color name="teal" value="#93ddc2"/>
+  <color name="brown" value="#cdab8f"/>
+  <color name="red" value="#ff7b63"/>
+  <color name="grey" value="#9a9996"/>
+  <color name="link" value="#99c1f1"/>
+
+  <style name="org:heading-1" foreground="blue" bold="true" scale="1.2"/>
+  <style name="org:heading-2" foreground="orange" bold="true" scale="1.1"/>
+  <style name="org:heading-3" foreground="green" bold="true"/>
+  <style name="org:heading-4" foreground="purple" bold="true"/>
+  <style name="org:heading-5" foreground="teal" bold="true"/>
+  <style name="org:heading-6" foreground="brown" bold="true"/>
+  <style name="org:heading-done" foreground="grey" bold="true"/>
+  <style name="org:todo" foreground="red" bold="true"/>
+  <style name="org:done" foreground="green" bold="true"/>
+  <style name="org:priority" foreground="orange" bold="true"/>
+  <style name="org:tag" foreground="grey" bold="false"/>
+  <style name="org:special-keyword" foreground="purple" bold="true"/>
+  <style name="org:timestamp" foreground="link" underline="single" bold="false"/>
+  <style name="org:timestamp-inactive" foreground="grey" bold="false"/>
+  <style name="org:list-marker" foreground="orange" bold="true"/>
+  <style name="org:checkbox" foreground="orange" bold="true"/>
+  <style name="org:link" foreground="link" underline="single"/>
+  <style name="org:verbatim" foreground="purple"/>
+  <style name="org:strikethrough" strikethrough="true"/>
+  <style name="org:meta" foreground="grey"/>
+  <style name="org:block" foreground="#a0a8f0"/>
+  <style name="org:drawer" foreground="grey"/>
+  <style name="org:table" foreground="#a0a8f0"/>
+</style-scheme>

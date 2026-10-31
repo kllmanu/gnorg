@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Org mode syntax highlighting for Vimtext -->
+<language id="org" name="Org" version="2.0" _section="Markup">
+  <metadata>
+    <property name="mimetypes">text/org;text/x-org</property>
+    <property name="globs">*.org;*.org_archive</property>
+    <property name="line-comment-start">#</property>
+  </metadata>
+
+  <styles>
+    <style id="heading-1" name="Heading level 1" map-to="def:heading"/>
+    <style id="heading-2" name="Heading level 2" map-to="def:heading"/>
+    <style id="heading-3" name="Heading level 3" map-to="def:heading"/>
+    <style id="heading-4" name="Heading level 4" map-to="def:heading"/>
+    <style id="heading-5" name="Heading level 5" map-to="def:heading"/>
+    <style id="heading-6" name="Heading level 6" map-to="def:heading"/>
+    <style id="heading-done" name="Done heading" map-to="def:comment"/>
+    <style id="todo" name="TODO keyword" map-to="def:statement"/>
+    <style id="done" name="DONE keyword" map-to="def:type"/>
+    <style id="priority" name="Priority" map-to="def:preprocessor"/>
+    <style id="tag" name="Tags" map-to="def:comment"/>
+    <style id="special-keyword" name="Planning keyword" map-to="def:keyword"/>
+    <style id="timestamp" name="Active timestamp" map-to="def:link-destination"/>
+    <style id="timestamp-inactive" name="Inactive timestamp" map-to="def:comment"/>
+    <style id="list-marker" name="List marker" map-to="def:list-marker"/>
+    <style id="checkbox" name="Checkbox" map-to="def:list-marker"/>
+    <style id="link" name="Link" map-to="def:net-address"/>
+    <style id="bold" name="Bold" map-to="def:strong-emphasis"/>
+    <style id="italic" name="Italic" map-to="def:emphasis"/>
+    <style id="underline" name="Underline" map-to="def:underlined"/>
+    <style id="verbatim" name="Verbatim" map-to="def:inline-code"/>
+    <style id="strikethrough" name="Strikethrough" map-to="def:deletion"/>
+    <style id="comment" name="Comment" map-to="def:comment"/>
+    <style id="meta" name="Keyword line" map-to="def:preprocessor"/>
+    <style id="block" name="Block" map-to="def:preformatted-section"/>
+    <style id="drawer" name="Drawer" map-to="def:comment"/>
+    <style id="table" name="Table" map-to="def:preformatted-section"/>
+  </styles>
+
+  <definitions>
+    <!-- Inline elements that can appear in headings and body text -->
+    <context id="timestamp" style-ref="timestamp">
+      <match>&lt;\d{4}-\d{2}-\d{2}[^&gt;\n]*&gt;(?:--&lt;\d{4}-\d{2}-\d{2}[^&gt;\n]*&gt;)?</match>
+    </context>
+    <context id="timestamp-inactive" style-ref="timestamp-inactive">
+      <match>\[\d{4}-\d{2}-\d{2}[^\]\n]*\](?:--\[\d{4}-\d{2}-\d{2}[^\]\n]*\])?</match>
+    </context>
+    <context id="link" style-ref="link">
+      <match>\[\[[^\]\n]+\](?:\[[^\]\n]+\])?\]|\b(?:https?|ftp|file|mailto):[^\s\]&gt;)]+</match>
+    </context>
+    <context id="priority" style-ref="priority">
+      <match>\[#[A-Z0-9]\]</match>
+    </context>
+    <context id="tags" style-ref="tag">
+      <match>(?&lt;=\s):[\w@#%:]+:(?=\s*$)</match>
+    </context>
+    <context id="special-keyword" style-ref="special-keyword">
+      <match>\b(?:SCHEDULED|DEADLINE|CLOSED):</match>
+    </context>
+
+    <!-- Emphasis: org requires whitespace/punctuation around the markers -->
+    <context id="bold" style-ref="bold">
+      <match>(?&lt;![^\s({'"-])\*[^\s*](?:[^*\n]*[^\s*])?\*(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+    <context id="italic" style-ref="italic">
+      <match>(?&lt;![^\s({'"-])/[^\s/](?:[^/\n]*[^\s/])?/(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+    <context id="underline" style-ref="underline">
+      <match>(?&lt;![^\s({'"-])_[^\s_](?:[^_\n]*[^\s_])?_(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+    <context id="verbatim" style-ref="verbatim">
+      <match>(?&lt;![^\s({'"-])(?:=[^\s=](?:[^=\n]*[^\s=])?=|~[^\s~](?:[^~\n]*[^\s~])?~)(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+    <context id="strikethrough" style-ref="strikethrough">
+      <match>(?&lt;![^\s({'"-])\+[^\s+](?:[^+\n]*[^\s+])?\+(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+
+    <context id="inline">
+      <include>
+        <context ref="timestamp"/>
+        <context ref="timestamp-inactive"/>
+        <context ref="link"/>
+        <context ref="bold"/>
+        <context ref="italic"/>
+        <context ref="underline"/>
+        <context ref="verbatim"/>
+        <context ref="strikethrough"/>
+      </include>
+    </context>
+
+    <context id="heading-inline">
+      <include>
+        <context ref="priority"/>
+        <context ref="tags"/>
+        <context ref="timestamp"/>
+        <context ref="timestamp-inactive"/>
+        <context ref="link"/>
+      </include>
+    </context>
+
+    <!-- Headings. DONE headings are dimmed as a whole. -->
+    <context id="heading-done" style-ref="heading-done" end-at-line-end="true">
+      <start>^\*+[ \t]+(DONE)(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="done"/>
+        <context ref="tags"/>
+      </include>
+    </context>
+
+    <define-regex id="heading-keyword">(?:[ \t]+(TODO)(?=[ \t]|$))?</define-regex>
+
+    <context id="heading-1" style-ref="heading-1" end-at-line-end="true">
+      <start>^(?:\*|\*{7}|\*{13})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+    <context id="heading-2" style-ref="heading-2" end-at-line-end="true">
+      <start>^(?:\*{2}|\*{8}|\*{14})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+    <context id="heading-3" style-ref="heading-3" end-at-line-end="true">
+      <start>^(?:\*{3}|\*{9}|\*{15})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+    <context id="heading-4" style-ref="heading-4" end-at-line-end="true">
+      <start>^(?:\*{4}|\*{10}|\*{16})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+    <context id="heading-5" style-ref="heading-5" end-at-line-end="true">
+      <start>^(?:\*{5}|\*{11}|\*{17})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+    <context id="heading-6" style-ref="heading-6" end-at-line-end="true">
+      <start>^(?:\*{6}|\*{12}|\*{18,})\%{heading-keyword}(?=[ \t]|$)</start>
+      <include>
+        <context sub-pattern="1" where="start" style-ref="todo"/>
+        <context ref="heading-inline"/>
+      </include>
+    </context>
+
+    <context id="planning" end-at-line-end="true">
+      <start>^(?=[ \t]*(?:SCHEDULED|DEADLINE|CLOSED):)</start>
+      <include>
+        <context ref="special-keyword"/>
+        <context ref="timestamp"/>
+        <context ref="timestamp-inactive"/>
+      </include>
+    </context>
+
+    <context id="block" style-ref="block" class="no-spell-check">
+      <start>(?i)^[ \t]*#\+BEGIN_(\w+)\b.*$</start>
+      <end>(?i)^[ \t]*#\+END_\%{1@start}\b.*$</end>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="meta"/>
+        <context sub-pattern="0" where="end" style-ref="meta"/>
+      </include>
+    </context>
+
+    <context id="drawer" style-ref="drawer" class="no-spell-check">
+      <start>^[ \t]*:[\w-]+:[ \t]*$</start>
+      <end>(?i)^[ \t]*:END:[ \t]*$</end>
+    </context>
+
+    <context id="meta" style-ref="meta" end-at-line-end="true" class="no-spell-check">
+      <start>^[ \t]*#\+\w+:</start>
+    </context>
+
+    <context id="comment" style-ref="comment" end-at-line-end="true" class="comment">
+      <start>^[ \t]*#(?=[ \t]|$)</start>
+    </context>
+
+    <context id="table" style-ref="table" end-at-line-end="true">
+      <start>^[ \t]*\|</start>
+    </context>
+
+    <context id="list-item">
+      <match>^[ \t]*([-+]|[ \t]+\*|\d+[.)])[ \t]+(\[[ Xx-]\](?=[ \t]|$))?</match>
+      <include>
+        <context sub-pattern="1" style-ref="list-marker"/>
+        <context sub-pattern="2" style-ref="checkbox"/>
+      </include>
+    </context>
+
+    <context id="org">
+      <include>
+        <context ref="heading-done"/>
+        <context ref="heading-1"/>
+        <context ref="heading-2"/>
+        <context ref="heading-3"/>
+        <context ref="heading-4"/>
+        <context ref="heading-5"/>
+        <context ref="heading-6"/>
+        <context ref="planning"/>
+        <context ref="block"/>
+        <context ref="drawer"/>
+        <context ref="meta"/>
+        <context ref="comment"/>
+        <context ref="table"/>
+        <context ref="list-item"/>
+        <context ref="special-keyword"/>
+        <context ref="inline"/>
+      </include>
+    </context>
+  </definitions>
+</language>

@@ -7,5 +7,10 @@
       <summary>Editor zoom level</summary>
       <description>Font size of the editor text, in percent of the default size.</description>
     </key>
+    <key name="agenda-directory" type="s">
+      <default>'~/org'</default>
+      <summary>Agenda folder</summary>
+      <description>Folder whose .org files (including subfolders) are shown in the agenda. A leading ~ is expanded to the home folder.</description>
+    </key>
   </schema>
 </schemalist>
