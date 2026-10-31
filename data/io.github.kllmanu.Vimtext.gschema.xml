@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="io.github.kllmanu.Vimtext" path="/io/github/kllmanu/Vimtext/">
+    <key name="zoom" type="i">
+      <range min="30" max="400"/>
+      <default>100</default>
+      <summary>Editor zoom level</summary>
+      <description>Font size of the editor text, in percent of the default size.</description>
+    </key>
+  </schema>
+</schemalist>

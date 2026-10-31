@@ -9,11 +9,16 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GtkSource", "5")
-from gi.repository import Adw, Gio, GLib, GObject, Gtk, GtkSource, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, GtkSource, Pango  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Vimtext"
 APP_NAME = "Vimtext"
 VERSION = "0.1.0"
+
+BASE_FONT_SIZE = 16  # px, at 100% zoom
+ZOOM_STEP = 10
+ZOOM_MIN = 30
+ZOOM_MAX = 400
 
 
 class EditorWindow(Adw.ApplicationWindow):
@@ -21,6 +26,7 @@ class EditorWindow(Adw.ApplicationWindow):
         super().__init__(application=app, default_width=960, default_height=680)
         self.file = None
         self._force_close = False
+        self._zoom_toast = None
 
         self._build_editor()
         self._build_ui()
@@ -41,6 +47,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self.view = GtkSource.View(
             buffer=self.buffer,
             monospace=True,
+            css_classes=["vimtext-editor"],
             show_line_numbers=True,
             highlight_current_line=True,
             auto_indent=True,
@@ -191,6 +198,21 @@ class EditorWindow(Adw.ApplicationWindow):
 
     def toast(self, message):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=2))
+
+    def show_zoom(self, zoom):
+        # Reuse one toast so rapid zoom changes update it instantly instead of queueing.
+        title = f"Zoom {zoom}%"
+        if self._zoom_toast is None:
+            self._zoom_toast = Adw.Toast(title=title, timeout=1, priority=Adw.ToastPriority.HIGH)
+            self._zoom_toast.connect("dismissed", self._on_zoom_toast_dismissed)
+        else:
+            self._zoom_toast.set_title(title)
+        # Re-adding a shown toast resets its timeout
+        self.toasts.add_toast(self._zoom_toast)
+
+    def _on_zoom_toast_dismissed(self, toast):
+        if self._zoom_toast is toast:
+            self._zoom_toast = None
 
     @property
     def is_pristine(self):
@@ -371,15 +393,36 @@ class EditorWindow(Adw.ApplicationWindow):
 class VimtextApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        self.zoom = None
+        self.zoom_css = None
+        self.settings = None
 
     def do_startup(self):
         Adw.Application.do_startup(self)
         GLib.set_application_name(APP_NAME)
 
-        for name, callback in (("about", self._on_about), ("quit", self._on_quit)):
+        self.settings = self._load_settings()
+
+        self.zoom_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), self.zoom_css,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        for name, callback in (
+            ("about", self._on_about),
+            ("quit", self._on_quit),
+            ("zoom-in", lambda *_: self.set_zoom(self.zoom + ZOOM_STEP)),
+            ("zoom-out", lambda *_: self.set_zoom(self.zoom - ZOOM_STEP)),
+            ("zoom-reset", lambda *_: self.set_zoom(100)),
+        ):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", callback)
             self.add_action(action)
+
+        self.set_accels_for_action("app.zoom-in", ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
+        self.set_accels_for_action("app.zoom-out", ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
+        self.set_accels_for_action("app.zoom-reset", ["<Ctrl>0", "<Ctrl>KP_0"])
+        self.set_zoom(self.settings.get_int("zoom") if self.settings else 100, notify=False)
 
         self.set_accels_for_action("app.quit", ["<Ctrl>q"])
         self.set_accels_for_action("win.new", ["<Ctrl>n"])
@@ -418,6 +461,37 @@ class VimtextApplication(Adw.Application):
             license_type=Gtk.License.GPL_3_0,
         )
         about.present(self.get_active_window())
+
+    @staticmethod
+    def _load_settings():
+        """Use the installed schema, or the one compiled next to the sources when run uncompiled."""
+        default = Gio.SettingsSchemaSource.get_default()
+        schema = default.lookup(APP_ID, True) if default else None
+        if schema is None:
+            data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, "data")
+            if os.path.exists(os.path.join(data_dir, "gschemas.compiled")):
+                source = Gio.SettingsSchemaSource.new_from_directory(data_dir, default, False)
+                schema = source.lookup(APP_ID, False)
+        if schema is None:
+            print(f"{APP_NAME}: settings schema {APP_ID} not found, preferences won't be saved "
+                  "(run `make schemas` or `make install`)", file=sys.stderr)
+            return None
+        return Gio.Settings.new_full(schema, None, None)
+
+    def set_zoom(self, zoom, notify=True):
+        zoom = max(ZOOM_MIN, min(ZOOM_MAX, zoom))
+        if zoom == self.zoom:
+            return
+        self.zoom = zoom
+        font_size = BASE_FONT_SIZE * zoom / 100
+        self.zoom_css.load_from_string(f"textview.vimtext-editor {{ font-size: {font_size:g}px; }}")
+        self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
+        self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
+        if self.settings and self.settings.get_int("zoom") != zoom:
+            self.settings.set_int("zoom", zoom)
+        win = self.get_active_window()
+        if notify and isinstance(win, EditorWindow):
+            win.show_zoom(zoom)
 
     def _on_quit(self, *_):
         for win in list(self.get_windows()):
