@@ -5,7 +5,8 @@ import datetime as dt
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, GObject, Gtk  # noqa: E402
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
 
 import org  # noqa: E402
 
@@ -52,9 +53,23 @@ class DatePopover(Gtk.Popover):
         self.set_child(box)
         self.set_default_widget(self.set_button)
 
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(keys)
+
         self.entry.set_text(initial.format(brackets=False, day_name=False) if initial else "")
         self._on_entry_changed(self.entry)
         self.connect("show", lambda *_: GLib.idle_add(self._focus_entry))
+
+    def _on_key_pressed(self, _controller, keyval, _keycode, state):
+        if (keyval == Gdk.KEY_g
+                and state & Gdk.ModifierType.CONTROL_MASK
+                and not state & (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.ALT_MASK
+                                | Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.HYPER_MASK
+                                | Gdk.ModifierType.META_MASK)):
+            self.popdown()
+            return True
+        return False
 
     def _focus_entry(self):
         self.entry.grab_focus()

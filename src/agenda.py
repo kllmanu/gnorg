@@ -31,6 +31,7 @@ class AgendaWindow(Adw.ApplicationWindow):
         self.lines = []
         self.tags = {}
         self._message_id = 0
+        self._active_date_popover = None
 
         self.buffer = GtkSource.Buffer(highlight_syntax=False, highlight_matching_brackets=False)
         self.view = GtkSource.View(
@@ -61,6 +62,7 @@ class AgendaWindow(Adw.ApplicationWindow):
             "C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-d": lambda: self.edit_planning("DEADLINE"),
             "a": self.app.show_agenda,
+            "C-g": self._keyboard_quit,
         })
         clicks = Gtk.GestureClick()
         clicks.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.open_entry())
@@ -236,6 +238,7 @@ class AgendaWindow(Adw.ApplicationWindow):
         initial = entry.scheduled if kind == "SCHEDULED" else entry.deadline
         today = dt.date.today()
         popover = DatePopover("Schedule" if kind == "SCHEDULED" else "Deadline", initial, today)
+        self._active_date_popover = popover
         popover.set_parent(self.view_box)
         popover.set_pointing_to(self._cursor_rect())
 
@@ -246,12 +249,18 @@ class AgendaWindow(Adw.ApplicationWindow):
             self.message(message or (f"{what}: {ts.describe(today)}" if ts else f"{what} removed"))
 
         def on_closed(p):
+            if self._active_date_popover is p:
+                self._active_date_popover = None
             self.view.grab_focus()
             GLib.idle_add(lambda: p.unparent() and False)
 
         popover.connect("apply", on_apply)
         popover.connect("closed", on_closed)
         popover.popup()
+
+    def _keyboard_quit(self):
+        if self._active_date_popover is not None:
+            self._active_date_popover.popdown()
 
     def _cursor_rect(self):
         location = self.view.get_iter_location(self.buffer.get_iter_at_mark(self.buffer.get_insert()))

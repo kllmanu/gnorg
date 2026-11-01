@@ -55,6 +55,12 @@ class OrgKeySequences:
                      | Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.HYPER_MASK
                      | Gdk.ModifierType.META_MASK)
 
+        if key == "C-g":
+            self._cancel()
+            if command := self.commands.get(key):
+                command()
+            return True
+
         if self._pending:
             self._cancel()
             if keyval == Gdk.KEY_c and state & control and not state & modifiers:

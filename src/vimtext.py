@@ -76,6 +76,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self.file = None
         self._force_close = False
         self._zoom_toast = None
+        self._active_date_popover = None
 
         self._build_editor()
         self._build_ui()
@@ -86,6 +87,7 @@ class EditorWindow(Adw.ApplicationWindow):
             "C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-d": lambda: self.edit_planning("DEADLINE"),
             "a": lambda: self.get_application().show_agenda(),
+            "C-g": self._keyboard_quit,
         })
         self._setup_style()
 
@@ -337,6 +339,7 @@ class EditorWindow(Adw.ApplicationWindow):
         today = dt.date.today()
         popover = DatePopover("Schedule" if kind == "SCHEDULED" else "Deadline",
                               org.get_planning(lines, idx, kind), today)
+        self._active_date_popover = popover
         popover.set_parent(self.editor_box)
         popover.set_pointing_to(self._cursor_rect())
 
@@ -354,12 +357,18 @@ class EditorWindow(Adw.ApplicationWindow):
                 self.toast(f"{what} removed")
 
         def on_closed(p):
+            if self._active_date_popover is p:
+                self._active_date_popover = None
             self.view.grab_focus()
             GLib.idle_add(lambda: p.unparent() and False)
 
         popover.connect("apply", on_apply)
         popover.connect("closed", on_closed)
         popover.popup()
+
+    def _keyboard_quit(self):
+        if self._active_date_popover is not None:
+            self._active_date_popover.popdown()
 
     def _cursor_rect(self):
         location = self.view.get_iter_location(self.buffer.get_iter_at_mark(self.buffer.get_insert()))
