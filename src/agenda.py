@@ -58,10 +58,12 @@ class AgendaWindow(Adw.ApplicationWindow):
         keys.connect("key-pressed", self._on_key_pressed)
         self.view.add_controller(keys)
         self._org_key_sequences = OrgKeySequences(self, {
-            "C-t": self.cycle_todo,
-            "C-s": lambda: self.edit_planning("SCHEDULED"),
-            "C-d": lambda: self.edit_planning("DEADLINE"),
-            "a": self.app.show_agenda,
+            "C-c C-t": self.cycle_todo,
+            "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
+            "C-c C-d": lambda: self.edit_planning("DEADLINE"),
+            "C-c a": self.app.show_agenda,
+            "C-x C-c": lambda: self.app.activate_action("quit", None),
+            "C-x C-f": self._find_file,
             "C-g": self._keyboard_quit,
         })
         clicks = Gtk.GestureClick()
@@ -168,6 +170,11 @@ class AgendaWindow(Adw.ApplicationWindow):
         self._message_id = GLib.timeout_add_seconds(4, reset)
 
     # ---------- Commands ----------
+
+    def _find_file(self):
+        window = next(iter(self.app.editor_windows()), None) or self.app.new_window()
+        window.present()
+        window.open_dialog()
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):

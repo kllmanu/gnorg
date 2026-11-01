@@ -83,10 +83,12 @@ class EditorWindow(Adw.ApplicationWindow):
         self._setup_vim()
         self._setup_actions()
         self._org_key_sequences = OrgKeySequences(self, {
-            "C-t": self.cycle_todo,
-            "C-s": lambda: self.edit_planning("SCHEDULED"),
-            "C-d": lambda: self.edit_planning("DEADLINE"),
-            "a": lambda: self.get_application().show_agenda(),
+            "C-c C-t": self.cycle_todo,
+            "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
+            "C-c C-d": lambda: self.edit_planning("DEADLINE"),
+            "C-c a": app.show_agenda,
+            "C-x C-c": lambda: app.activate_action("quit", None),
+            "C-x C-f": self.open_dialog,
             "C-g": self._keyboard_quit,
         })
         self._setup_style()

@@ -1,4 +1,4 @@
-"""Emacs-style Org key sequences."""
+"""Emacs-style key sequences for Org and file commands."""
 
 import gi
 
@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 class OrgKeySequences:
     def __init__(self, window, commands):
         self.commands = commands
-        self._pending = False
+        self._pending = None
         self._timeout_id = 0
 
         self.controller = Gtk.EventControllerKey(
@@ -20,18 +20,18 @@ class OrgKeySequences:
         window.connect("destroy", lambda *_: self._cancel())
 
     def _cancel(self):
-        self._pending = False
+        self._pending = None
         if self._timeout_id:
             GLib.source_remove(self._timeout_id)
             self._timeout_id = 0
 
     def _expire(self):
-        self._pending = False
+        self._pending = None
         self._timeout_id = 0
         return GLib.SOURCE_REMOVE
 
-    def _start(self):
-        self._pending = True
+    def _start(self, prefix):
+        self._pending = prefix
         self._timeout_id = GLib.timeout_add(1500, self._expire)
 
     @staticmethod
@@ -50,11 +50,6 @@ class OrgKeySequences:
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         key = self._sequence_key(keyval, state)
-        control = Gdk.ModifierType.CONTROL_MASK
-        modifiers = (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.ALT_MASK
-                     | Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.HYPER_MASK
-                     | Gdk.ModifierType.META_MASK)
-
         if key == "C-g":
             self._cancel()
             if command := self.commands.get(key):
@@ -62,14 +57,16 @@ class OrgKeySequences:
             return True
 
         if self._pending:
+            sequence = f"{self._pending} {key}"
+            repeated_prefix = key == self._pending
             self._cancel()
-            if keyval == Gdk.KEY_c and state & control and not state & modifiers:
-                self._start()
-            elif key in self.commands:
-                self.commands[key]()
+            if command := self.commands.get(sequence):
+                command()
+            elif repeated_prefix:
+                self._start(key)
             return True
 
-        if keyval == Gdk.KEY_c and state & control and not state & modifiers:
-            self._start()
+        if key in ("C-c", "C-x"):
+            self._start(key)
             return True
         return False
