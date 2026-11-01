@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
 from vim import Gdk, Gio, GLib, Gtk, OrganizerApplication, ZOOM_MAX, ZOOM_MIN  # noqa: E402
 from bufferpicker import BufferPicker, matches_buffer  # noqa: E402
+from agenda import event_lanes, event_minutes  # noqa: E402
 
 
 @unittest.skipUnless(Gtk.init_check(), "GTK display required")
@@ -135,6 +136,86 @@ class TabTests(unittest.TestCase):
             self.app.lookup_action("quit").activate(None)
             quit_app.assert_called_once_with()
         self.assertEqual(self.app.get_windows(), [])
+
+    def test_agenda_is_one_reusable_tab_with_seven_days(self):
+        tab = self.app.new_tab()
+        tab.present()
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        self.assertIs(agenda.window, tab.window)
+        self.assertEqual(len(self.app.get_windows()), 1)
+        self.assertEqual(agenda.window.tabs.get_n_pages(), 2)
+        self.assertEqual(len(agenda.days), 7)
+        self.assertEqual(len(self.app.editor_tabs()), 1)
+        self.assertIsNone(agenda.window.lookup_action("save"))
+        self.app.show_agenda()
+        self.assertIs(self.app.agenda, agenda)
+        self.assertEqual(agenda.window.tabs.get_n_pages(), 2)
+        start = agenda.start
+        agenda.shift(1)
+        self.assertEqual((agenda.start - start).days, 7)
+        agenda.goto_today()
+        self.assertEqual(agenda.start, start)
+        agenda.close()
+        self.assertIsNone(self.app.agenda)
+        self.assertIs(tab.window.active_tab, tab)
+        self.assertIsNotNone(tab.window.lookup_action("save"))
+
+    def test_calendar_event_duration_and_overlap_lanes(self):
+        import datetime as dt
+        import org
+
+        day = dt.date.today()
+        text = (f"* First\nSCHEDULED: <{day.isoformat()} 09:00>\n"
+                f"* Second\nSCHEDULED: <{day.isoformat()} 09:15-10:00>\n"
+                f"* Third\nSCHEDULED: <{day.isoformat()} 11:00>\n")
+        items = org.build_agenda(org.parse_entries(text), day, 1, day)[day]
+        self.assertEqual(event_minutes(items[0]), (540, 570))
+        self.assertEqual(event_minutes(items[1]), (555, 600))
+        self.assertEqual(event_lanes(items), {0: (0, 2), 1: (1, 2), 2: (0, 1)})
+
+    def test_agenda_entries_open_source_and_follow_unsaved_edits(self):
+        import datetime as dt
+        import org
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tasks.org")
+            today = dt.date.today()
+            text = (f"* TODO Dated task\nSCHEDULED: <{today.isoformat()} 10:00>\n"
+                    "* TODO Undated task\n")
+            with open(path, "w") as stream:
+                stream.write(text)
+            tab = self.app.open_file(Gio.File.new_for_path(path))
+            self.wait_for(lambda: bool(tab.get_text()))
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                self.app.show_agenda()
+                agenda = self.app.agenda
+                self.assertEqual(len(agenda.entry_buttons), 1)
+                item, button = agenda.entry_buttons[0]
+                self.assertEqual(item.entry.display_title, "Dated task")
+                button.emit("clicked")
+                self.assertIs(tab.window.active_tab, tab)
+                self.assertEqual(len(self.app.editor_tabs()), 1)
+                self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line(), 0)
+                agenda.present()
+                agenda._move(1)
+                agenda.cycle_todo()
+                self.assertTrue(tab.buffer.get_modified())
+                self.assertTrue(org.parse_entries(tab.get_text())[0].is_done)
+                self.assertTrue(agenda.entry_buttons[0][0].entry.is_done)
+                self.assertEqual(len(agenda.days), 7)
+                agenda._move(1)
+                agenda.edit_planning("SCHEDULED")
+                self.assertIsNotNone(agenda._active_date_popover)
+                text_before = tab.get_text()
+                agenda._keyboard_quit()
+                self.wait_for(lambda: agenda._active_date_popover is None)
+                self.assertEqual(tab.get_text(), text_before)
+                with patch.object(self.app, "save_session") as save_session:
+                    with patch.object(self.app, "quit"):
+                        tab.buffer.set_modified(False)
+                        self.app._on_quit()
+                    save_session.assert_called_once_with()
 
     def test_session_restores_file_tabs_in_order_without_duplicates(self):
         with tempfile.TemporaryDirectory() as directory:

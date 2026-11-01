@@ -12,7 +12,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
-from agenda import AgendaWindow  # noqa: E402
+from agenda import AgendaTab  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgIndent  # noqa: E402
@@ -697,7 +697,11 @@ class EditorWindow(Adw.ApplicationWindow):
         tab = self.active_tab
         if tab is None:
             return False
-        return tab._org_key_sequences._on_key_pressed(controller, keyval, keycode, state)
+        if tab._org_key_sequences._on_key_pressed(controller, keyval, keycode, state):
+            return True
+        if isinstance(tab, AgendaTab):
+            return tab._on_key_pressed(controller, keyval, keycode, state)
+        return False
 
     @property
     def active_tab(self):
@@ -737,6 +741,8 @@ class EditorWindow(Adw.ApplicationWindow):
                 self.toolbar_view.remove(self._header)
             self._header = tab.header
             self.toolbar_view.add_top_bar(self._header)
+        for name in self.list_actions():
+            self.remove_action(name)
         for name in tab.actions.list_actions():
             self.add_action(tab.actions.lookup_action(name))
         tab._update_title()
@@ -746,9 +752,12 @@ class EditorWindow(Adw.ApplicationWindow):
         def finish(confirmed):
             if confirmed:
                 tab = page.get_child()
-                offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
-                self._closed_tabs.append(
-                    (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
+                if isinstance(tab, EditorTab):
+                    offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
+                    self._closed_tabs.append(
+                        (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
+                else:
+                    self.get_application().agenda = None
             self.tabs.close_page_finish(page, confirmed)
             if not self.tabs.get_n_pages() and not self._closing:
                 self._force_close = True
@@ -775,6 +784,11 @@ class OrganizerApplication(Adw.Application):
         self._quitting = False
         self._session_restored = False
         self.recent_files = []
+        self.connect("window-removed", self._on_window_removed)
+
+    def _on_window_removed(self, _app, window):
+        if self.agenda is not None and self.agenda.window is window:
+            self.agenda = None
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -860,7 +874,8 @@ class OrganizerApplication(Adw.Application):
         return [w for w in self.get_windows() if isinstance(w, EditorWindow)]
 
     def editor_tabs(self):
-        return [tab for window in self.editor_windows() for tab in window.documents()]
+        return [tab for window in self.editor_windows() for tab in window.documents()
+                if isinstance(tab, EditorTab)]
 
     def new_tab(self):
         active = self.get_active_window()
@@ -953,20 +968,17 @@ class OrganizerApplication(Adw.Application):
 
     def show_agenda(self):
         if self.agenda is None:
-            self.agenda = AgendaWindow(self)
-            # The window is only disposed once this reference is dropped, so let go on close
-            self.agenda.connect("close-request", self._on_agenda_closed)
-        self.agenda.refresh(keep_scroll=False)
+            windows = self.editor_windows()
+            window = windows[0] if windows else self.new_window()
+            self.agenda = AgendaTab(window)
+            self.agenda.page = window.tabs.append(self.agenda)
+            self.agenda.connect("destroy", self._on_agenda_destroyed)
+        self.agenda.refresh()
         self.agenda.present()
-        self.agenda.view.grab_focus()
 
-    def _on_agenda_closed(self, win):
-        if self.agenda is win:
+    def _on_agenda_destroyed(self, tab):
+        if self.agenda is tab:
             self.agenda = None
-        windows = self.editor_windows()
-        if windows and windows[0].active_tab:
-            windows[0].active_tab.present()
-        return False
 
     def queue_agenda_refresh(self):
         if self.agenda is None or self._agenda_refresh_id:
@@ -1086,7 +1098,7 @@ class OrganizerApplication(Adw.Application):
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
-            f'textview.organizer-editor {{ font-family: "Iosevka", monospace; '
+            f'textview.organizer-editor, .organizer-agenda {{ font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
         for window in self.editor_tabs():
             window.org_indent.queue_refresh()
@@ -1095,7 +1107,7 @@ class OrganizerApplication(Adw.Application):
         if self.settings and self.settings.get_int("zoom") != zoom:
             self.settings.set_int("zoom", zoom)
         win = self.get_active_window()
-        if notify and isinstance(win, EditorWindow) and win.active_tab:
+        if notify and isinstance(win, EditorWindow) and isinstance(win.active_tab, EditorTab):
             win.active_tab.show_zoom(zoom)
 
     def _on_quit(self, *_):
