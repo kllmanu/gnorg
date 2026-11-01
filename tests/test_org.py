@@ -14,6 +14,18 @@ TODAY = D(2026, 10, 31)  # a Saturday
 
 
 class NewItemTests(unittest.TestCase):
+    def test_toggle_checkbox(self):
+        for line, expected in (
+            ("- [ ] task", "- [X] task"),
+            ("  + [X] task", "  + [ ] task"),
+            ("1) [x] task", "1) [ ] task"),
+            ("\t* [-] task", "\t* [X] task"),
+            ("- task", None),
+            ("text [ ] task", None),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(org.toggle_checkbox(line), expected)
+
     def test_heading_and_list_prefixes(self):
         for line, expected in (
             ("** TODO Heading", "** "),

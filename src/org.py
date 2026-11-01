@@ -48,6 +48,14 @@ def new_item_prefix(line):
     checkbox = "[ ] " if re.match(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+\[[ Xx-]\]", line) else ""
     return indent + bullet + " " + checkbox
 
+def toggle_checkbox(line):
+    """Toggle a list checkbox, treating a partial checkbox as unchecked."""
+    match = re.match(r"^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ Xx-])(\])", line)
+    if match is None:
+        return None
+    state = " " if match[2] in ("X", "x") else "X"
+    return line[:match.start(2)] + state + line[match.end(2):]
+
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})(?:-(\d{1,2}):(\d{2}))?$")
 _AMPM_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?(am|pm)$")
 _REPEATER_RE = re.compile(r"^(\+\+|\.\+|\+)(\d+)([hdwmy])$")

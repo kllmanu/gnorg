@@ -82,6 +82,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self._setup_actions()
         self._org_key_sequences = OrgKeySequences(self, {
             "C-c C-t": self.cycle_todo,
+            "C-c C-c": self.toggle_checkbox,
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c a": app.show_agenda,
@@ -302,6 +303,15 @@ class EditorWindow(Adw.ApplicationWindow):
         GLib.idle_add(lambda: self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, True, 0, 0.3) and False)
 
     # ---------- Org commands ----------
+
+    def toggle_checkbox(self):
+        line = self._cursor_line()
+        text = self.get_text().split("\n")[line]
+        updated = org.toggle_checkbox(text)
+        if updated is None:
+            self.toast("Not on a list item with a checkbox")
+            return
+        self.apply_edit((line, line + 1, [updated]))
 
     def insert_item(self):
         line = self._cursor_line()
