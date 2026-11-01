@@ -62,6 +62,7 @@ class AgendaView(Adw.Bin):
         self.entry_buttons = []
         self.selected_item = None
         self._active_date_popover = None
+        self._folder_message = None
         self.actions = Gio.SimpleActionGroup()
         self.insert_action_group("win", self.actions)
 
@@ -82,17 +83,23 @@ class AgendaView(Adw.Bin):
         self.header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                             tooltip_text="Main Menu"))
 
-        navigation = Gtk.Box(spacing=6, margin_top=12, margin_bottom=12,
-                             margin_start=12, margin_end=12)
-        previous = Gtk.Button(icon_name="go-previous-symbolic", tooltip_text="Previous week")
+        navigation = Gtk.Box(spacing=6, margin_top=6, margin_bottom=6,
+                             margin_start=6, margin_end=12)
+        previous = Gtk.Button(icon_name="go-previous-symbolic", tooltip_text="Previous week",
+                              css_classes=["flat"])
         previous.connect("clicked", lambda *_: self.shift(-1))
-        following = Gtk.Button(icon_name="go-next-symbolic", tooltip_text="Next week")
+        following = Gtk.Button(icon_name="go-next-symbolic", tooltip_text="Next week",
+                               css_classes=["flat"])
         following.connect("clicked", lambda *_: self.shift(1))
-        today = Gtk.Button(label="Today")
-        today.connect("clicked", lambda *_: self.goto_today())
+        self.today_button = Gtk.Button(tooltip_text="Go to the current week", css_classes=["flat"])
+        today_content = Gtk.Box(spacing=6)
+        today_content.append(Gtk.Image(icon_name="x-office-calendar-symbolic"))
+        today_content.append(Gtk.Label(label="Today"))
+        self.today_button.set_child(today_content)
+        self.today_button.connect("clicked", lambda *_: self.goto_today())
         navigation.append(previous)
-        navigation.append(today)
         navigation.append(following)
+        navigation.append(self.today_button)
         self.week_label = Gtk.Label(hexpand=True, xalign=1, css_classes=["heading"])
         navigation.append(self.week_label)
         self.view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
@@ -131,13 +138,12 @@ class AgendaView(Adw.Bin):
         """)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self.status = Gtk.Label(xalign=0, wrap=True, margin_start=12, margin_end=12,
-                                margin_bottom=8, css_classes=["dim-label"])
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        content.append(navigation)
         content.append(self.view)
-        content.append(self.status)
-        self.set_child(content)
+        content.append(Gtk.Separator())
+        content.append(navigation)
+        self.toasts = Adw.ToastOverlay(child=content)
+        self.set_child(self.toasts)
 
         for name, callback in (
                 ("new", lambda: self.window.new_tab().present()),
@@ -179,11 +185,15 @@ class AgendaView(Adw.Bin):
     def _update_title(self):
         self.window.set_title("Agenda – Organizer")
 
+    def toast(self, message):
+        self.toasts.add_toast(Adw.Toast(title=message, timeout=4))
+
     def refresh(self, keep_scroll=True):
         if self._active_date_popover is not None:
             return
         directory, files, entries = self.app.agenda_entries()
         today = dt.date.today()
+        self.today_button.set_sensitive(self.start != org.week_start(today))
         self.days = org.build_agenda(entries, self.start, 7, today)
         visible_days = [(date, items) for date, items in self.days.items()
                         if not self.app.hide_weekends or date.weekday() < 5]
@@ -191,12 +201,14 @@ class AgendaView(Adw.Bin):
         self.week_label.set_label(
             f"{org.format_date(self.start, with_year=True)} – "
             f"{org.format_date(end, with_year=True)}")
-        if files:
-            self.status.set_label("")
-        else:
+        folder_message = None
+        if not files:
             reason = "does not exist" if not os.path.isdir(directory) else "has no .org files"
-            self.status.set_label(
+            folder_message = (
                 f"The agenda folder {directory} {reason}. Choose a folder in Preferences.")
+        if folder_message and folder_message != self._folder_message:
+            self.toast(folder_message)
+        self._folder_message = folder_message
         focus = self.window.get_focus()
         restore_focus = focus is not None and focus.is_ancestor(self.view)
         selected = self.selected_item
@@ -356,18 +368,18 @@ class AgendaView(Adw.Bin):
 
     def cycle_todo(self):
         if self.selected_item is None:
-            self.status.set_label("Select an entry first.")
+            self.toast("Select an entry first.")
             return
         entry = self.selected_item.entry
         message = self.app.edit_entry(
             entry, lambda lines, i: org.cycle_todo(lines, i, dt.date.today()))
         self.refresh()
         if message:
-            self.status.set_label(message)
+            self.toast(message)
 
     def edit_planning(self, kind):
         if self.selected_item is None:
-            self.status.set_label("Select an entry first.")
+            self.toast("Select an entry first.")
             return
         entry = self.selected_item.entry
         button = next(button for item, button in self.entry_buttons if item == self.selected_item)
@@ -380,7 +392,7 @@ class AgendaView(Adw.Bin):
             message = self.app.edit_entry(
                 entry, lambda lines, i: (org.set_planning(lines, i, kind, timestamp), None))
             if message:
-                self.status.set_label(message)
+                self.toast(message)
 
         def on_closed(p):
             self._active_date_popover = None

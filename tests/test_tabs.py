@@ -243,6 +243,78 @@ class TabTests(unittest.TestCase):
         self.assertEqual(tab.window.stack.get_visible_child_name(), "files")
         self.assertIsNotNone(tab.window.lookup_action("save"))
 
+    def test_agenda_week_controls_are_at_the_bottom_and_navigate(self):
+        import datetime as dt
+        import org
+
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        content = agenda.toasts.get_child()
+        self.assertIs(content.get_first_child(), agenda.view)
+        self.assertIsInstance(agenda.view.get_next_sibling(), Gtk.Separator)
+        navigation = content.get_last_child()
+        self.assertIs(agenda.week_label.get_parent(), navigation)
+        previous = navigation.get_first_child()
+        following = previous.get_next_sibling()
+        today = following.get_next_sibling()
+        self.assertEqual(previous.get_icon_name(), "go-previous-symbolic")
+        self.assertEqual(following.get_icon_name(), "go-next-symbolic")
+        self.assertIs(today, agenda.today_button)
+        self.assertEqual(today.get_child().get_first_child().get_icon_name(),
+                         "x-office-calendar-symbolic")
+        self.assertEqual(today.get_child().get_last_child().get_label(), "Today")
+        self.assertFalse(today.get_sensitive())
+        self.assertFalse(today.get_child().get_first_child().is_sensitive())
+        self.assertFalse(today.get_child().get_last_child().is_sensitive())
+        start = agenda.start
+        previous.emit("clicked")
+        self.assertEqual(agenda.start, start - dt.timedelta(days=7))
+        self.assertTrue(today.get_sensitive())
+        following.emit("clicked")
+        self.assertEqual(agenda.start, start)
+        self.assertFalse(today.get_sensitive())
+        following.emit("clicked")
+        today.emit("clicked")
+        self.assertEqual(agenda.start, org.week_start(dt.date.today()))
+        self.assertFalse(today.get_sensitive())
+
+    def test_today_button_is_disabled_in_current_week_even_with_hidden_weekend(self):
+        import datetime as dt
+
+        self.app.show_agenda()
+        agenda = self.app.agenda
+
+        class Sunday(dt.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 11, 1)
+
+        with patch("agenda.dt.date", Sunday):
+            agenda.start = Sunday(2026, 10, 26)
+            agenda.refresh()
+            self.assertFalse(agenda.today_button.get_sensitive())
+            agenda.shift(1)
+            self.assertTrue(agenda.today_button.get_sensitive())
+            agenda.goto_today()
+            self.assertFalse(agenda.today_button.get_sensitive())
+
+    def test_agenda_messages_use_toasts_without_a_status_bar(self):
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        self.assertIsInstance(agenda.get_child(), Adw.ToastOverlay)
+        with patch.object(agenda.toasts, "add_toast") as add_toast:
+            agenda.selected_item = None
+            agenda.cycle_todo()
+            self.assertEqual(add_toast.call_args.args[0].get_title(), "Select an entry first.")
+            agenda.edit_planning("SCHEDULED")
+            self.assertEqual(add_toast.call_count, 2)
+        with (patch.object(self.app, "agenda_entries", return_value=("/missing-org", [], [])),
+              patch.object(agenda, "toast") as toast):
+            agenda.refresh()
+            agenda.refresh()
+            toast.assert_called_once_with(
+                "The agenda folder /missing-org does not exist. Choose a folder in Preferences.")
+
     def test_hide_weekends_preference_updates_agendas_and_preserves_entries(self):
         import datetime as dt
         import org
