@@ -62,7 +62,7 @@ def file_filters():
 def same_file(a, b):
     return bool(a and b) and os.path.realpath(a) == os.path.realpath(b)
 
-BASE_FONT_SIZE = 16  # px, at 100% zoom
+BASE_FONT_SIZE = 16  # pt, at 100% zoom
 ZOOM_STEP = 10
 ZOOM_MIN = 30
 ZOOM_MAX = 400
@@ -88,6 +88,7 @@ class EditorWindow(Adw.ApplicationWindow):
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
             "C-g": self._keyboard_quit,
+            "M-Return": self.insert_item,
         })
         self._setup_style()
 
@@ -301,6 +302,18 @@ class EditorWindow(Adw.ApplicationWindow):
         GLib.idle_add(lambda: self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, True, 0, 0.3) and False)
 
     # ---------- Org commands ----------
+
+    def insert_item(self):
+        line = self._cursor_line()
+        lines = self.get_text().split("\n")
+        prefix = org.new_item_prefix(lines[line])
+        if prefix is None:
+            self.toast("Not on an Org heading or list item")
+            return
+        self.apply_edit((line, line + 1, [lines[line], prefix]))
+        self.buffer.place_cursor(self.buffer.get_iter_at_line_offset(line + 1, len(prefix))[1])
+        self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, False, 0, 0)
+        self.view.grab_focus()
 
     def _cursor_line(self):
         return self.buffer.get_iter_at_mark(self.buffer.get_insert()).get_line()
@@ -842,7 +855,7 @@ class OrganizerApplication(Adw.Application):
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
             f'textview.organizer-editor {{ font-family: "Iosevka", monospace; '
-            f"font-size: {font_size:g}px; }}")
+            f"font-size: {font_size:g}pt; }}")
         self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
         self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
         if self.settings and self.settings.get_int("zoom") != zoom:

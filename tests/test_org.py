@@ -13,6 +13,23 @@ D = dt.date
 TODAY = D(2026, 10, 31)  # a Saturday
 
 
+class NewItemTests(unittest.TestCase):
+    def test_heading_and_list_prefixes(self):
+        for line, expected in (
+            ("** TODO Heading", "** "),
+            ("* DONE Heading", "* "),
+            ("- item", "- "),
+            ("  + item", "  + "),
+            ("\t* item", "\t* "),
+            ("9. item", "10. "),
+            ("  2) [X] item", "  3) [ ] "),
+            ("- [-] item", "- [ ] "),
+            ("- [ ] item", "- [ ] "),
+            ("ordinary text", None),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(org.new_item_prefix(line), expected)
+
 class TimestampTests(unittest.TestCase):
     def test_parse_and_format_roundtrip(self):
         for raw in ("<2026-11-05 Thu>", "<2026-11-05 Thu 10:00>", "<2026-11-05 Thu 10:00-11:30 +1w>",

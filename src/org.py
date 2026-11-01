@@ -34,6 +34,20 @@ DRAWER_END_RE = re.compile(r"^[ \t]*:END:[ \t]*$", re.IGNORECASE)
 BLOCK_START_RE = re.compile(r"^[ \t]*#\+BEGIN_", re.IGNORECASE)
 BLOCK_END_RE = re.compile(r"^[ \t]*#\+END_", re.IGNORECASE)
 
+def new_item_prefix(line):
+    """Return the prefix for a new heading or list item below this line."""
+    heading = HEADING_RE.match(line)
+    if heading:
+        return heading[1] + " "
+    item = re.match(r"^([ \t]*)([-+*]|\d+[.)])[ \t]+(?:\[[ Xx-]\][ \t]*)?", line)
+    if item is None:
+        return None
+    indent, bullet = item[1], item[2]
+    if bullet[0].isdigit():
+        bullet = str(int(bullet[:-1]) + 1) + bullet[-1]
+    checkbox = "[ ] " if re.match(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+\[[ Xx-]\]", line) else ""
+    return indent + bullet + " " + checkbox
+
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})(?:-(\d{1,2}):(\d{2}))?$")
 _AMPM_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?(am|pm)$")
 _REPEATER_RE = re.compile(r"^(\+\+|\.\+|\+)(\d+)([hdwmy])$")

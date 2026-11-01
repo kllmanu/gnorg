@@ -49,6 +49,13 @@ class OrgKeySequences:
         return key
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if (keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter)
+                and modifiers == Gdk.ModifierType.ALT_MASK
+                and not self._pending):
+            if command := self.commands.get("M-Return"):
+                command()
+                return True
         key = self._sequence_key(keyval, state)
         if key == "C-g":
             self._cancel()
