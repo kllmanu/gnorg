@@ -13,6 +13,32 @@ D = dt.date
 TODAY = D(2026, 10, 31)  # a Saturday
 
 
+class ShiftTimestampTests(unittest.TestCase):
+    def test_date_and_time_fields(self):
+        for text, offset, direction, expected in (
+            ("<2026-12-31 Thu>", 5, 1, "<2027-01-01 Fri>"),
+            ("<2026-03-01 Sun>", 12, -1, "<2026-02-28 Sat>"),
+            ("<2026-11-02 Mon 09:30-11:45 +1w>", 16, 1,
+             "<2026-11-02 Mon 10:30-11:45 +1w>"),
+            ("<2026-11-02 Mon 09:30-11:45 +1w>", 23, -1,
+             "<2026-11-02 Mon 09:30-10:45 +1w>"),
+            ("<2026-11-02 Mon 23:30>", 18, 1, "<2026-11-02 Mon 00:30>"),
+            ("<2026-11-02 Mon 00:30>", 18, -1, "<2026-11-02 Mon 23:30>"),
+        ):
+            with self.subTest(text=text, offset=offset):
+                self.assertEqual(org.shift_timestamp(text, offset, direction),
+                                 (0, len(text), expected))
+
+    def test_range_end_is_shifted_independently(self):
+        text = "<2026-11-02 Mon>--<2026-11-03 Tue>"
+        self.assertEqual(org.shift_timestamp(text, 22, 1),
+                         (18, len(text), "<2026-11-04 Wed>"))
+
+    def test_outside_active_timestamp(self):
+        for text in ("ordinary text", "[2026-11-02 Mon]", "<not a date>"):
+            self.assertIsNone(org.shift_timestamp(text, 3, 1))
+
+
 class NewItemTests(unittest.TestCase):
     def test_indent_layout(self):
         lines = ["preamble", "* Heading", "body", "** Child", "- item",

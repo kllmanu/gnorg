@@ -109,6 +109,31 @@ class TabTests(unittest.TestCase):
         self.wait_for(lambda: tab._active_date_popover is None)
         self.assertFalse(tab.buffer.get_modified())
 
+    def test_shift_arrows_adjust_timestamp_and_preserve_cursor_and_undo(self):
+        tab = self.app.new_tab()
+        original = "* Meeting\n<2026-11-02 Mon 09:30>"
+        tab.buffer.set_text(original)
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(28))
+        tab.present()
+        self.assertTrue(tab.window._on_key_pressed(
+            None, Gdk.KEY_Up, 0, Gdk.ModifierType.SHIFT_MASK))
+        self.assertEqual(tab.get_text(), "* Meeting\n<2026-11-02 Mon 10:30>")
+        self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset(), 28)
+        self.assertTrue(tab.window._on_key_pressed(
+            None, Gdk.KEY_Down, 0, Gdk.ModifierType.SHIFT_MASK))
+        self.assertEqual(tab.get_text(), original)
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), "* Meeting\n<2026-11-02 Mon 10:30>")
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), original)
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(15))
+        self.assertTrue(tab.window._on_key_pressed(
+            None, Gdk.KEY_Up, 0, Gdk.ModifierType.SHIFT_MASK))
+        self.assertEqual(tab.get_text(), "* Meeting\n<2026-11-03 Tue 09:30>")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        self.assertFalse(tab.window._on_key_pressed(
+            None, Gdk.KEY_Up, 0, Gdk.ModifierType.SHIFT_MASK))
+
     def test_timestamp_reports_conflicting_changes_instead_of_overwriting(self):
         tab = self.app.new_tab()
         tab.buffer.set_text("<2026-11-05 Thu>")

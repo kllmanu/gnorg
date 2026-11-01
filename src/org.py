@@ -4,7 +4,7 @@ import calendar
 import datetime as dt
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 TODO_KEYWORDS = ("TODO",)
 DONE_KEYWORDS = ("DONE",)
@@ -82,6 +82,27 @@ _RELATIVE_RE = re.compile(r"^([+-])(\d+)([dwmy]?)$")
 
 
 # ---------- Dates ----------
+
+def shift_timestamp(text, offset, direction):
+    """Return a timestamp replacement at the cursor, or None outside an active timestamp."""
+    for match in ACTIVE_TS_RE.finditer(text):
+        if not match.start() <= offset < match.end():
+            continue
+        timestamp = Timestamp.parse(match.group(0))
+        if timestamp is None:
+            return None
+        relative = offset - match.start()
+        for index, time_match in enumerate(re.finditer(r"\d{1,2}:\d{2}", match.group(0))):
+            if time_match.start() <= relative < time_match.end():
+                field_name = "time" if index == 0 else "end_time"
+                value = getattr(timestamp, field_name)
+                timestamp = replace(timestamp, **{
+                    field_name: value.replace(hour=(value.hour + direction) % 24)})
+                return match.start(), match.end(), timestamp.format()
+        timestamp = timestamp.with_date(timestamp.date + dt.timedelta(days=direction))
+        return match.start(), match.end(), timestamp.format()
+    return None
+
 
 def add_interval(date, n, unit):
     """Add n days/weeks/months/years ('h' counts whole days) to a date."""

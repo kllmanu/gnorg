@@ -432,6 +432,25 @@ class EditorTab(Adw.Bin):
         popover.connect("closed", on_closed)
         popover.popup()
 
+    def shift_timestamp(self, direction):
+        buf = self.buffer
+        cursor = buf.get_iter_at_mark(buf.get_insert())
+        offset = cursor.get_offset()
+        try:
+            edit = org.shift_timestamp(self.get_text(), offset, direction)
+        except OverflowError:
+            self.toast("The date cannot be shifted beyond the supported year range.")
+            return True
+        if edit is None:
+            return False
+        start, end, text = edit
+        buf.begin_user_action()
+        buf.delete(buf.get_iter_at_offset(start), buf.get_iter_at_offset(end))
+        buf.insert(buf.get_iter_at_offset(start), text)
+        buf.place_cursor(buf.get_iter_at_offset(start + min(offset - start, len(text) - 1)))
+        buf.end_user_action()
+        return True
+
     def edit_planning(self, kind):
         lines, idx = self._current_heading()
         if idx is None:
@@ -758,6 +777,10 @@ class EditorWindow(Adw.ApplicationWindow):
         tab = self.active_view
         if tab is None:
             return False
+        if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
+                and state & Gtk.accelerator_get_default_mod_mask() == Gdk.ModifierType.SHIFT_MASK
+                and keyval in (Gdk.KEY_Up, Gdk.KEY_Down)):
+            return tab.shift_timestamp(1 if keyval == Gdk.KEY_Up else -1)
         if tab._org_key_sequences._on_key_pressed(controller, keyval, keycode, state):
             return True
         if isinstance(tab, AgendaView):
