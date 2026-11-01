@@ -12,7 +12,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
-from agenda import AgendaTab  # noqa: E402
+from agenda import AgendaView  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgIndent  # noqa: E402
@@ -93,6 +93,7 @@ class EditorTab(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c a": app.show_agenda,
+            "C-c f": self.window.show_files,
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
             "C-x C-s": self.save,
@@ -119,7 +120,7 @@ class EditorTab(Adw.Bin):
             buffer=self.buffer,
             monospace=True,
             css_classes=["organizer-editor"],
-            show_line_numbers=True,
+            show_line_numbers=self.get_application().show_line_numbers,
             highlight_current_line=True,
             auto_indent=True,
             smart_backspace=True,
@@ -147,8 +148,6 @@ class EditorTab(Adw.Bin):
         header.pack_start(self.open_button)
         header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
                                      tooltip_text="New Tab (Ctrl+T)", action_name="win.new"))
-        header.pack_start(Gtk.Button(icon_name="x-office-calendar-symbolic",
-                                     tooltip_text="Agenda (C-c a)", action_name="app.agenda"))
 
         menu = Gio.Menu()
         file_section = Gio.Menu()
@@ -193,6 +192,7 @@ class EditorTab(Adw.Bin):
 
     def present(self):
         self.window.tabs.set_selected_page(self.page)
+        self.window.show_files()
         self.window.present()
         self.view.grab_focus()
 
@@ -286,7 +286,7 @@ class EditorTab(Adw.Bin):
         if self.page is not None:
             self.page.set_title(("• " if modified else "") + name)
             self.page.set_tooltip(short_path(self.path) or name)
-        if self.window.active_tab is self:
+        if self.window.active_view is self:
             self.window.set_title(f"{name} – {APP_NAME}")
 
     def _update_position(self):
@@ -677,16 +677,29 @@ class EditorWindow(Adw.ApplicationWindow):
         self._closing = False
         self._force_close = False
         self._closed_tabs = []
+        self.agenda = None
         self.tabs = Adw.TabView()
         bar = Adw.TabBar(view=self.tabs, autohide=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.append(bar)
         box.append(self.tabs)
         self.tabs.set_vexpand(True)
-        self.toolbar_view = Adw.ToolbarView(content=box)
+        self.stack = Adw.ViewStack()
+        self.stack.add_titled_with_icon(box, "files", "Files", "text-x-generic-symbolic")
+        self.agenda_container = Adw.Bin()
+        self.stack.add_titled_with_icon(
+            self.agenda_container, "agenda", "Agenda", "x-office-calendar-symbolic")
+        self.view_switcher = Adw.ViewSwitcherTitle(stack=self.stack, title=APP_NAME)
+        self.switcher_bar = Adw.ViewSwitcherBar(stack=self.stack)
+        self.view_switcher.bind_property(
+            "title-visible", self.switcher_bar, "reveal", GObject.BindingFlags.SYNC_CREATE)
+        self.toolbar_view = Adw.ToolbarView(content=self.stack)
+        self.toolbar_view.add_bottom_bar(self.switcher_bar)
         self._header = None
+        self._title_bindings = []
         self.set_content(self.toolbar_view)
         self.tabs.connect("notify::selected-page", self._on_selected)
+        self.stack.connect("notify::visible-child", self._on_view_changed)
         self.tabs.connect("close-page", self._on_close_page)
         self.connect("close-request", self._on_close_request)
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
@@ -694,12 +707,12 @@ class EditorWindow(Adw.ApplicationWindow):
         self.add_controller(keys)
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
-        tab = self.active_tab
+        tab = self.active_view
         if tab is None:
             return False
         if tab._org_key_sequences._on_key_pressed(controller, keyval, keycode, state):
             return True
-        if isinstance(tab, AgendaTab):
+        if isinstance(tab, AgendaView):
             return tab._on_key_pressed(controller, keyval, keycode, state)
         return False
 
@@ -707,6 +720,19 @@ class EditorWindow(Adw.ApplicationWindow):
     def active_tab(self):
         page = self.tabs.get_selected_page()
         return page.get_child() if page else None
+
+    @property
+    def active_view(self):
+        if self.stack.get_visible_child_name() == "agenda":
+            return self.agenda
+        return self.active_tab
+
+    def show_files(self):
+        if self.active_tab is None:
+            self.new_tab()
+            return
+        self.stack.set_visible_child_name("files")
+        self._on_selected()
 
     def documents(self):
         return [self.tabs.get_nth_page(i).get_child() for i in range(self.tabs.get_n_pages())]
@@ -716,6 +742,7 @@ class EditorWindow(Adw.ApplicationWindow):
         tab.remove_controller(tab._org_key_sequences.controller)
         tab.page = self.tabs.append(tab)
         self.tabs.set_selected_page(tab.page)
+        self.show_files()
         tab._update_title()
         return tab
 
@@ -732,14 +759,29 @@ class EditorWindow(Adw.ApplicationWindow):
         tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(offset))
         tab.present()
 
+    def _on_view_changed(self, *_):
+        if self.stack.get_visible_child_name() == "agenda":
+            self.get_application().show_agenda(self)
+        elif self.stack.get_visible_child_name() == "files" and self.active_tab is None:
+            self.new_tab()
+        self._on_selected()
+
     def _on_selected(self, *_):
-        tab = self.active_tab
+        tab = self.active_view
         if tab is None:
             return
         if self._header is not tab.header:
             if self._header is not None:
+                for binding in self._title_bindings:
+                    binding.unbind()
+                self._header.set_title_widget(None)
                 self.toolbar_view.remove(self._header)
             self._header = tab.header
+            self._header.set_title_widget(self.view_switcher)
+            self._title_bindings = [
+                tab.title_widget.bind_property(
+                    name, self.view_switcher, name, GObject.BindingFlags.SYNC_CREATE)
+                for name in ("title", "subtitle")]
             self.toolbar_view.add_top_bar(self._header)
         for name in self.list_actions():
             self.remove_action(name)
@@ -752,14 +794,12 @@ class EditorWindow(Adw.ApplicationWindow):
         def finish(confirmed):
             if confirmed:
                 tab = page.get_child()
-                if isinstance(tab, EditorTab):
-                    offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
-                    self._closed_tabs.append(
-                        (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
-                else:
-                    self.get_application().agenda = None
+                offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
+                self._closed_tabs.append(
+                    (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
             self.tabs.close_page_finish(page, confirmed)
-            if not self.tabs.get_n_pages() and not self._closing:
+            if (not self.tabs.get_n_pages() and not self._closing
+                    and self.stack.get_visible_child_name() == "files"):
                 self._force_close = True
                 self.close()
         page.get_child().request_close(finish)
@@ -781,6 +821,7 @@ class OrganizerApplication(Adw.Application):
         self.agenda = None
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
+        self.show_line_numbers = False
         self._quitting = False
         self._session_restored = False
         self.recent_files = []
@@ -797,6 +838,7 @@ class OrganizerApplication(Adw.Application):
         self.settings = self._load_settings()
         if self.settings:
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
+            self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
             self.recent_files = self.settings.get_strv("recent-files")
 
         language_specs = data_path("language-specs")
@@ -966,28 +1008,34 @@ class OrganizerApplication(Adw.Application):
             return f"Could not update {os.path.basename(entry.path)}: {e.strerror}"
         return message
 
-    def show_agenda(self):
-        if self.agenda is None:
+    def show_agenda(self, window=None):
+        if window is None:
+            active = self.get_active_window()
             windows = self.editor_windows()
-            window = windows[0] if windows else self.new_window()
-            self.agenda = AgendaTab(window)
-            self.agenda.page = window.tabs.append(self.agenda)
-            self.agenda.connect("destroy", self._on_agenda_destroyed)
+            window = (active if isinstance(active, EditorWindow)
+                      else windows[0] if windows else self.new_window())
+        if window.agenda is None:
+            window.agenda = AgendaView(window)
+            window.agenda_container.set_child(window.agenda)
+            window.agenda.connect("destroy", self._on_agenda_destroyed)
+        self.agenda = window.agenda
         self.agenda.refresh()
         self.agenda.present()
 
-    def _on_agenda_destroyed(self, tab):
-        if self.agenda is tab:
+    def _on_agenda_destroyed(self, agenda):
+        agenda.window.agenda = None
+        if self.agenda is agenda:
             self.agenda = None
 
     def queue_agenda_refresh(self):
-        if self.agenda is None or self._agenda_refresh_id:
+        if not any(window.agenda for window in self.editor_windows()) or self._agenda_refresh_id:
             return
 
         def refresh():
             self._agenda_refresh_id = 0
-            if self.agenda is not None:
-                self.agenda.refresh()
+            for window in self.editor_windows():
+                if window.agenda is not None:
+                    window.agenda.refresh()
             return False
 
         self._agenda_refresh_id = GLib.timeout_add(300, refresh)
@@ -1010,6 +1058,13 @@ class OrganizerApplication(Adw.Application):
             active=self.org_indent_enabled)
         indent_row.connect("notify::active", lambda row, *_: self.set_org_indent(row.get_active()))
         editor_group.add(indent_row)
+        line_numbers_row = Adw.SwitchRow(
+            title="Show Line Numbers",
+            subtitle="Display line numbers beside the editor text.",
+            active=self.show_line_numbers)
+        line_numbers_row.connect(
+            "notify::active", lambda row, *_: self.set_show_line_numbers(row.get_active()))
+        editor_group.add(line_numbers_row)
         page.add(editor_group)
         group = Adw.PreferencesGroup(
             title="Agenda",
@@ -1034,8 +1089,9 @@ class OrganizerApplication(Adw.Application):
             if self.settings:
                 self.settings.set_string("agenda-directory", short_path(path))
             row.set_subtitle(short_path(path))
-            if self.agenda is not None:
-                self.agenda.refresh(keep_scroll=False)
+            for window in self.editor_windows():
+                if window.agenda is not None:
+                    window.agenda.refresh(keep_scroll=False)
 
         def on_choose(_button):
             file_dialog = Gtk.FileDialog(title="Choose Agenda Folder")
@@ -1052,6 +1108,13 @@ class OrganizerApplication(Adw.Application):
             self.settings.set_boolean("org-indent-mode", enabled)
         for window in self.editor_tabs():
             window.org_indent.set_enabled(enabled)
+
+    def set_show_line_numbers(self, enabled):
+        self.show_line_numbers = enabled
+        if self.settings:
+            self.settings.set_boolean("show-line-numbers", enabled)
+        for tab in self.editor_tabs():
+            tab.view.set_show_line_numbers(enabled)
 
     def _on_about(self, *_):
         about = Adw.AboutDialog(
@@ -1107,8 +1170,8 @@ class OrganizerApplication(Adw.Application):
         if self.settings and self.settings.get_int("zoom") != zoom:
             self.settings.set_int("zoom", zoom)
         win = self.get_active_window()
-        if notify and isinstance(win, EditorWindow) and isinstance(win.active_tab, EditorTab):
-            win.active_tab.show_zoom(zoom)
+        if notify and isinstance(win, EditorWindow) and isinstance(win.active_view, EditorTab):
+            win.active_view.show_zoom(zoom)
 
     def _on_quit(self, *_):
         if self._quitting:

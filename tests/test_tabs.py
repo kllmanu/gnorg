@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
-from vim import Gdk, Gio, GLib, Gtk, OrganizerApplication, ZOOM_MAX, ZOOM_MIN  # noqa: E402
+from vim import Adw, Gdk, Gio, GLib, Gtk, OrganizerApplication, ZOOM_MAX, ZOOM_MIN  # noqa: E402
 from bufferpicker import BufferPicker, matches_buffer  # noqa: E402
 from agenda import event_lanes, event_minutes  # noqa: E402
 
@@ -51,6 +51,72 @@ class TabTests(unittest.TestCase):
         self.assertEqual(len(self.app.editor_tabs()), 2)
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
+
+    def test_line_numbers_default_off_and_update_existing_and_new_tabs(self):
+        first = self.app.new_tab()
+        second = self.app.new_window().new_tab()
+        self.assertFalse(first.view.get_show_line_numbers())
+        self.assertFalse(second.view.get_show_line_numbers())
+        self.addCleanup(self.app.set_show_line_numbers, False)
+        settings = Mock()
+        with patch.object(self.app, "settings", settings):
+            self.app.set_show_line_numbers(True)
+            settings.set_boolean.assert_called_once_with("show-line-numbers", True)
+        third = self.app.new_tab()
+        for tab in (first, second, third):
+            self.assertTrue(tab.view.get_show_line_numbers())
+        self.app.set_show_line_numbers(False)
+        for tab in (first, second, third):
+            self.assertFalse(tab.view.get_show_line_numbers())
+
+    def test_line_numbers_preference_switch_updates_editor(self):
+        tab = self.app.new_tab()
+        tab.present()
+        self.addCleanup(self.app.set_show_line_numbers, False)
+        self.app.show_preferences()
+        dialog = tab.window.get_visible_dialog()
+
+        def find_switch(widget):
+            if isinstance(widget, Adw.SwitchRow) and widget.get_title() == "Show Line Numbers":
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                found = find_switch(child)
+                if found is not None:
+                    return found
+                child = child.get_next_sibling()
+            return None
+
+        row = find_switch(dialog)
+        self.assertIsNotNone(row)
+        self.assertFalse(row.get_active())
+        row.set_active(True)
+        self.assertTrue(tab.view.get_show_line_numbers())
+        row.set_active(False)
+        self.assertFalse(tab.view.get_show_line_numbers())
+        dialog.close()
+
+    def test_line_numbers_setting_is_restored_at_startup(self):
+        directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
+        source = Gio.SettingsSchemaSource.new_from_directory(
+            directory, Gio.SettingsSchemaSource.get_default(), False)
+        schema = source.lookup("io.github.kllmanu.Organizer", False)
+        settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
+        self.assertFalse(settings.get_boolean("show-line-numbers"))
+        settings.set_boolean("show-line-numbers", True)
+        app = OrganizerApplication()
+        app.set_application_id("io.github.kllmanu.Organizer.LineNumberTests")
+        app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
+        with (patch.object(OrganizerApplication, "_load_settings", return_value=settings),
+              patch("vim.data_path", return_value=None)):
+            app.register(None)
+        self.addCleanup(app.quit)
+        tab = app.new_tab()
+        self.addCleanup(tab.window.destroy)
+        self.assertTrue(app.show_line_numbers)
+        self.assertTrue(tab.view.get_show_line_numbers())
+        app.set_show_line_numbers(False)
+        self.assertFalse(settings.get_boolean("show-line-numbers"))
 
     def test_reopen_closed_tab_restores_text_and_cursor(self):
         self.app.new_tab()
@@ -137,29 +203,169 @@ class TabTests(unittest.TestCase):
             quit_app.assert_called_once_with()
         self.assertEqual(self.app.get_windows(), [])
 
-    def test_agenda_is_one_reusable_tab_with_seven_days(self):
+    def test_agenda_replaces_files_without_adding_a_tab(self):
         tab = self.app.new_tab()
         tab.present()
         self.app.show_agenda()
         agenda = self.app.agenda
         self.assertIs(agenda.window, tab.window)
         self.assertEqual(len(self.app.get_windows()), 1)
-        self.assertEqual(agenda.window.tabs.get_n_pages(), 2)
+        self.assertEqual(agenda.window.tabs.get_n_pages(), 1)
+        self.assertIs(agenda.window.active_view, agenda)
+        self.assertIs(agenda.window.active_tab, tab)
+        self.assertEqual(agenda.window.stack.get_visible_child_name(), "agenda")
+        self.assertIs(agenda.window.view_switcher.get_stack(), agenda.window.stack)
+        self.wait_for(lambda: not tab.get_mapped())
+        self.assertFalse(tab.window.tabs.get_parent().get_mapped())
         self.assertEqual(len(agenda.days), 7)
         self.assertEqual(len(self.app.editor_tabs()), 1)
         self.assertIsNone(agenda.window.lookup_action("save"))
         self.app.show_agenda()
         self.assertIs(self.app.agenda, agenda)
-        self.assertEqual(agenda.window.tabs.get_n_pages(), 2)
+        self.assertEqual(agenda.window.tabs.get_n_pages(), 1)
         start = agenda.start
         agenda.shift(1)
         self.assertEqual((agenda.start - start).days, 7)
         agenda.goto_today()
         self.assertEqual(agenda.start, start)
         agenda.close()
-        self.assertIsNone(self.app.agenda)
+        self.assertIs(self.app.agenda, agenda)
         self.assertIs(tab.window.active_tab, tab)
+        self.assertIs(tab.window.active_view, tab)
+        self.assertEqual(tab.window.stack.get_visible_child_name(), "files")
         self.assertIsNotNone(tab.window.lookup_action("save"))
+
+    def test_view_switcher_preserves_selected_file_and_unsaved_edits(self):
+        first = self.app.new_tab()
+        second = self.app.new_tab()
+        second.buffer.set_text("* Unsaved")
+        second.buffer.place_cursor(second.buffer.get_iter_at_offset(5))
+        second.present()
+        window = second.window
+        window.stack.set_visible_child_name("agenda")
+        agenda = self.app.agenda
+        start = agenda.start
+        agenda.shift(1)
+        window.stack.set_visible_child_name("files")
+        self.assertIs(window.active_view, second)
+        self.assertEqual(second.get_text(), "* Unsaved")
+        self.assertTrue(second.buffer.get_modified())
+        self.assertEqual(second.buffer.get_iter_at_mark(second.buffer.get_insert()).get_offset(), 5)
+        self.assertEqual(window.tabs.get_n_pages(), 2)
+        window.stack.set_visible_child_name("agenda")
+        self.assertIs(self.app.agenda, agenda)
+        self.assertEqual((agenda.start - start).days, 7)
+        first.present()
+        self.assertIs(window.active_view, first)
+        self.assertEqual(window.stack.get_visible_child_name(), "files")
+
+    def test_new_tab_from_agenda_switches_to_files(self):
+        tab = self.app.new_tab()
+        self.app.show_agenda()
+        tab.window.lookup_action("new").activate(None)
+        self.assertEqual(tab.window.tabs.get_n_pages(), 2)
+        self.assertIs(tab.window.active_view, tab.window.active_tab)
+        self.assertEqual(tab.window.stack.get_visible_child_name(), "files")
+
+    def test_view_switchers_target_their_own_window(self):
+        first = self.app.new_tab()
+        second = self.app.new_window().new_tab()
+        first.window.stack.set_visible_child_name("agenda")
+        first_agenda = first.window.agenda
+        second.window.stack.set_visible_child_name("agenda")
+        self.assertIs(first.window.active_view, first_agenda)
+        self.assertIs(second.window.active_view, second.window.agenda)
+        self.assertIsNot(first_agenda, second.window.agenda)
+        first.window.stack.set_visible_child_name("files")
+        self.assertIs(first.window.active_view, first)
+        self.assertIs(second.window.active_view, second.window.agenda)
+
+    def test_agenda_quit_key_returns_to_selected_file(self):
+        tab = self.app.new_tab()
+        self.app.show_agenda()
+        self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_q, 0, Gdk.ModifierType(0)))
+        self.assertIs(tab.window.active_view, tab)
+        self.assertIsNotNone(tab.window.lookup_action("save"))
+
+    def test_files_shortcut_from_agenda_and_editor(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Unsaved")
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(5))
+        self.app.show_agenda()
+        window = tab.window
+        for _ in range(2):
+            self.assertTrue(window._on_key_pressed(
+                None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
+            self.assertTrue(window._on_key_pressed(None, Gdk.KEY_f, 0, Gdk.ModifierType(0)))
+            self.assertIs(window.active_view, tab)
+            self.assertEqual(window.stack.get_visible_child_name(), "files")
+            self.assertEqual(tab.get_text(), "* Unsaved")
+            self.assertTrue(tab.buffer.get_modified())
+            self.assertEqual(
+                tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset(), 5)
+
+    def test_files_shortcut_without_open_files_creates_editor(self):
+        self.app.show_agenda()
+        window = self.app.agenda.window
+        self.assertTrue(window._on_key_pressed(
+            None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
+        self.assertTrue(window._on_key_pressed(None, Gdk.KEY_f, 0, Gdk.ModifierType(0)))
+        self.assertEqual(window.tabs.get_n_pages(), 1)
+        self.assertIs(window.active_view, window.active_tab)
+
+    def test_closing_last_file_from_agenda_keeps_agenda_open(self):
+        tab = self.app.new_tab()
+        self.app.show_agenda()
+        window = tab.window
+        tab.close()
+        self.assertIn(window, self.app.get_windows())
+        self.assertEqual(window.tabs.get_n_pages(), 0)
+        self.assertIs(window.active_view, window.agenda)
+        window.stack.set_visible_child_name("files")
+        self.assertEqual(window.tabs.get_n_pages(), 1)
+
+    def test_agenda_without_files_can_switch_to_a_new_editor(self):
+        self.app.show_agenda()
+        window = self.app.agenda.window
+        self.assertEqual(window.tabs.get_n_pages(), 0)
+        window.stack.set_visible_child_name("files")
+        self.assertEqual(window.tabs.get_n_pages(), 1)
+        self.assertIs(window.active_view, window.active_tab)
+        self.assertIsNotNone(window.lookup_action("save"))
+
+    def test_native_view_switcher_has_named_views_and_responsive_bar(self):
+        tab = self.app.new_tab()
+        window = tab.window
+        self.assertIsInstance(window.stack, Adw.ViewStack)
+        self.assertIsInstance(window.view_switcher, Adw.ViewSwitcherTitle)
+        self.assertIs(window._header.get_title_widget(), window.view_switcher)
+        self.assertIs(window.switcher_bar.get_stack(), window.stack)
+        pages = window.stack.get_pages()
+        self.assertEqual(pages.get_n_items(), 2)
+        self.assertEqual([pages.get_item(i).get_title() for i in range(2)], ["Files", "Agenda"])
+        self.assertTrue(all(pages.get_item(i).get_icon_name() for i in range(2)))
+        tab.present()
+        window.view_switcher.set_view_switcher_enabled(False)
+        self.wait_for(window.view_switcher.get_title_visible)
+        self.assertTrue(window.switcher_bar.get_reveal())
+        window.stack.set_visible_child_name("agenda")
+        self.assertIs(window._header.get_title_widget(), window.view_switcher)
+        self.assertEqual(window.view_switcher.get_title(), "Agenda")
+        window.stack.set_visible_child_name("files")
+        tab.buffer.set_text("* Unsaved")
+        self.assertEqual(window.view_switcher.get_title(), tab.title_widget.get_title())
+
+    def test_buffer_picker_in_agenda_uses_visible_header_and_restores_focus(self):
+        tab = self.app.new_tab()
+        tab.present()
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        picker = BufferPicker(self.app.editor_tabs(), tab)
+        picker.present(tab.window)
+        self.assertIs(picker.get_parent(), agenda.open_button)
+        picker.close()
+        self.wait_for(lambda: picker.get_parent() is None)
+        self.assertIs(tab.window.get_focus(), agenda.view)
 
     def test_calendar_event_duration_and_overlap_lanes(self):
         import datetime as dt
@@ -198,8 +404,10 @@ class TabTests(unittest.TestCase):
                 self.assertEqual(len(self.app.editor_tabs()), 1)
                 self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line(), 0)
                 agenda.present()
+                agenda_title = tab.window.get_title()
                 agenda._move(1)
                 agenda.cycle_todo()
+                self.assertEqual(tab.window.get_title(), agenda_title)
                 self.assertTrue(tab.buffer.get_modified())
                 self.assertTrue(org.parse_entries(tab.get_text())[0].is_done)
                 self.assertTrue(agenda.entry_buttons[0][0].entry.is_done)
@@ -281,7 +489,7 @@ class TabTests(unittest.TestCase):
         tab.present()
         self.app.show_agenda()
         self.app.agenda.close()
-        self.assertIsNone(self.app.agenda)
+        self.assertIsNotNone(self.app.agenda)
         self.assertIs(tab.window.get_focus(), tab.view)
         tab.open_button.grab_focus()
         with patch.object(tab._org_key_sequences, "commands",

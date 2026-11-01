@@ -1,4 +1,4 @@
-"""An integrated weekly calendar for dated Org entries."""
+"""A workspace agenda view with a weekly calendar for dated Org entries."""
 
 import datetime as dt
 import os
@@ -52,12 +52,11 @@ def event_lanes(items):
     return result
 
 
-class AgendaTab(Adw.Bin):
+class AgendaView(Adw.Bin):
     def __init__(self, window):
         super().__init__()
         self.window = window
         self.app = window.get_application()
-        self.page = None
         self.start = org.week_start(dt.date.today())
         self.days = {}
         self.entry_buttons = []
@@ -152,6 +151,7 @@ class AgendaTab(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c a": self.app.show_agenda,
+            "C-c f": self.window.show_files,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
             "C-x b": self.app.show_buffers,
@@ -169,19 +169,14 @@ class AgendaTab(Adw.Bin):
         return self.app
 
     def present(self):
-        self.window.tabs.set_selected_page(self.page)
+        self.window.stack.set_visible_child_name("agenda")
         self.window.present()
         self.view.grab_focus()
 
     def close(self):
-        self.window.tabs.close_page(self.page)
-
-    def request_close(self, finish):
-        finish(True)
+        self.window.show_files()
 
     def _update_title(self):
-        if self.page:
-            self.page.set_title("Agenda")
         self.window.set_title("Agenda – Organizer")
 
     def refresh(self, keep_scroll=True):
@@ -345,7 +340,7 @@ class AgendaTab(Adw.Bin):
         self.refresh()
 
     def _find_file(self):
-        tab = next(iter(self.app.editor_tabs()), None) or self.app.new_tab()
+        tab = self.window.active_tab or self.window.new_tab()
         tab.present()
         tab.open_dialog()
 

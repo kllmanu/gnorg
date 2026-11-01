@@ -56,7 +56,7 @@ class BufferPicker(Gtk.Popover):
 
     def present(self, window):
         self.window = window
-        tab = getattr(window, "active_tab", None)
+        tab = getattr(window, "active_view", None)
         self.set_parent(tab.open_button if tab else window.title_widget)
         self.popup()
         self.search.grab_focus()
@@ -71,7 +71,7 @@ class BufferPicker(Gtk.Popover):
     def _unparent(self):
         self.unparent()
         if getattr(self, "_restore_focus", True):
-            tab = getattr(self.window, "active_tab", None)
+            tab = getattr(self.window, "active_view", None)
             if tab:
                 tab.view.grab_focus()
             else:
@@ -80,7 +80,7 @@ class BufferPicker(Gtk.Popover):
 
     def _open_file(self):
         self.close(restore_focus=False)
-        tab = getattr(self.window, "active_tab", None)
+        tab = getattr(self.window, "active_view", None)
         if tab:
             tab.open_dialog()
         else:

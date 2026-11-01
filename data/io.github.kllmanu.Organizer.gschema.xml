@@ -30,6 +30,11 @@
       <summary>Org indent mode</summary>
       <description>Visually indent sections by heading depth and hide extra heading stars without modifying file contents.</description>
     </key>
+    <key name="show-line-numbers" type="b">
+      <default>false</default>
+      <summary>Show line numbers</summary>
+      <description>Display line numbers beside the text in all file editors.</description>
+    </key>
     <key name="zoom" type="i">
       <range min="30" max="400"/>
       <default>100</default>
