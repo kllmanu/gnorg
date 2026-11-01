@@ -39,6 +39,7 @@ class AgendaWindow(Adw.ApplicationWindow):
             highlight_current_line=True, css_classes=["organizer-editor"],
             top_margin=8, bottom_margin=8, left_margin=8, right_margin=8)
         scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True)
+        self.app.setup_scroll_zoom(scroller)
         self.view_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.view_box.append(scroller)
 

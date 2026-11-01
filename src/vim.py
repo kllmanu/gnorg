@@ -162,6 +162,7 @@ class EditorTab(Adw.Bin):
                                    tooltip_text="Save (Ctrl+S)", action_name="win.save"))
 
         scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True)
+        self.get_application().setup_scroll_zoom(scroller)
         # Popovers can't be parented to the text view itself, so they hang off this box
         self.editor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.editor_box.append(scroller)
@@ -655,6 +656,12 @@ class EditorTab(Adw.Bin):
 class EditorWindow(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, default_width=960, default_height=680)
+        if app.settings:
+            self.set_default_size(
+                app.settings.get_int("window-width"),
+                app.settings.get_int("window-height"))
+            if app.settings.get_boolean("window-maximized"):
+                self.maximize()
         self._closing = False
         self._force_close = False
         self.tabs = Adw.TabView()
@@ -998,6 +1005,19 @@ class OrganizerApplication(Adw.Application):
             return None
         return Gio.Settings.new_full(schema, None, None)
 
+    def setup_scroll_zoom(self, widget):
+        controller = Gtk.EventControllerScroll(
+            flags=Gtk.EventControllerScrollFlags.VERTICAL | Gtk.EventControllerScrollFlags.DISCRETE,
+            propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        controller.connect("scroll", self._on_zoom_scroll)
+        widget.add_controller(controller)
+
+    def _on_zoom_scroll(self, controller, _dx, dy):
+        if not controller.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK or not dy:
+            return False
+        self.set_zoom(self.zoom + (ZOOM_STEP if dy < 0 else -ZOOM_STEP))
+        return True
+
     def set_zoom(self, zoom, notify=True):
         zoom = max(ZOOM_MIN, min(ZOOM_MAX, zoom))
         if zoom == self.zoom:
@@ -1026,6 +1046,13 @@ class OrganizerApplication(Adw.Application):
         def check_next():
             tab = next(tabs, None)
             if tab is None:
+                if self.settings:
+                    windows = self.editor_windows()
+                    if windows:
+                        width, height = windows[0].get_default_size()
+                        self.settings.set_int("window-width", width)
+                        self.settings.set_int("window-height", height)
+                        self.settings.set_boolean("window-maximized", windows[0].is_maximized())
                 self.save_session()
                 for window in list(self.get_windows()):
                     window.destroy()

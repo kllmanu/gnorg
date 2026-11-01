@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
-from vim import Gio, GLib, Gtk, OrganizerApplication  # noqa: E402
+from vim import Gdk, Gio, GLib, Gtk, OrganizerApplication, ZOOM_MAX, ZOOM_MIN  # noqa: E402
 
 
 @unittest.skipUnless(Gtk.init_check(), "GTK display required")
@@ -130,6 +130,8 @@ class TabTests(unittest.TestCase):
                 self.app.open_file(file)
             self.app.new_tab()
             settings = Mock()
+            settings.get_int.side_effect = lambda key: {"window-width": 960, "window-height": 680}[key]
+            settings.get_boolean.return_value = False
             uris = [file.get_uri() for file in files]
             settings.get_strv.return_value = uris
             with patch.object(self.app, "settings", settings):
@@ -151,3 +153,20 @@ class TabTests(unittest.TestCase):
             self.app._on_quit()
             tab.window.get_visible_dialog().emit("response", "cancel")
             settings.set_strv.assert_not_called()
+
+    def test_control_scroll_zooms_and_respects_limits(self):
+        controller = Mock()
+        controller.get_current_event_state.return_value = Gdk.ModifierType.CONTROL_MASK
+        self.app.set_zoom(100, notify=False)
+        self.assertTrue(self.app._on_zoom_scroll(controller, 0, -1))
+        self.assertEqual(self.app.zoom, 110)
+        self.assertTrue(self.app._on_zoom_scroll(controller, 0, 1))
+        self.assertEqual(self.app.zoom, 100)
+        for limit, delta in ((ZOOM_MAX, -1), (ZOOM_MIN, 1)):
+            self.app.set_zoom(limit, notify=False)
+            self.assertTrue(self.app._on_zoom_scroll(controller, 0, delta))
+            self.assertEqual(self.app.zoom, limit)
+        self.app.set_zoom(100, notify=False)
+        controller.get_current_event_state.return_value = Gdk.ModifierType(0)
+        self.assertFalse(self.app._on_zoom_scroll(controller, 0, -1))
+        self.assertEqual(self.app.zoom, 100)

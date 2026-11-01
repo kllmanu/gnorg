@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
+    <key name="window-width" type="i">
+      <range min="1" max="2147483647"/>
+      <default>960</default>
+      <summary>Editor window width</summary>
+    </key>
+    <key name="window-height" type="i">
+      <range min="1" max="2147483647"/>
+      <default>680</default>
+      <summary>Editor window height</summary>
+    </key>
+    <key name="window-maximized" type="b">
+      <default>false</default>
+      <summary>Whether the editor window is maximized</summary>
+    </key>
     <key name="session-files" type="as">
       <default>[]</default>
       <summary>Files in the previous session</summary>
