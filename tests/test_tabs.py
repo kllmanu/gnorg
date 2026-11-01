@@ -52,6 +52,79 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
 
+    def test_timestamp_shortcut_inserts_active_timestamp_and_undoes_once(self):
+        import org
+
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Meeting\nNotes: ")
+        tab.buffer.place_cursor(tab.buffer.get_end_iter())
+        tab.present()
+        self.assertTrue(tab.window._on_key_pressed(
+            None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
+        self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_period, 0, Gdk.ModifierType(0)))
+        popover = tab._active_date_popover
+        self.assertIsNotNone(popover)
+        popover.entry.set_text("2026-11-05 10:00-11:00 +1w")
+        timestamp = popover.timestamp
+        self.assertTrue(timestamp.active)
+        popover._apply()
+        self.wait_for(lambda: tab._active_date_popover is None)
+        self.assertEqual(tab.get_text(), "* Meeting\nNotes: <2026-11-05 Thu 10:00-11:00 +1w>")
+        self.assertTrue(tab.buffer.get_modified())
+        self.assertEqual(
+            tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset(), len(tab.get_text()))
+        self.assertEqual(org.parse_entries(tab.get_text())[0].timestamps, [timestamp])
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), "* Meeting\nNotes: ")
+
+    def test_timestamp_edits_existing_active_timestamp_without_remove_option(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("Before <2026-11-05 Thu 10:00> after")
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(12))
+        tab.present()
+        tab.insert_timestamp()
+        popover = tab._active_date_popover
+        self.assertEqual(popover.entry.get_text(), "2026-11-05 10:00")
+        buttons = popover.get_child().get_last_child()
+        self.assertIs(buttons.get_first_child(), popover.set_button)
+        popover.entry.set_text("2026-11-06 12:30")
+        popover._apply()
+        self.wait_for(lambda: tab._active_date_popover is None)
+        self.assertEqual(tab.get_text(), "Before <2026-11-06 Fri 12:30> after")
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), "Before <2026-11-05 Thu 10:00> after")
+
+    def test_timestamp_cancel_and_invalid_input_leave_buffer_unchanged(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("Plain text without a heading")
+        tab.buffer.set_modified(False)
+        tab.present()
+        tab.insert_timestamp()
+        popover = tab._active_date_popover
+        popover.entry.set_text("not a date")
+        self.assertFalse(popover.set_button.get_sensitive())
+        popover._apply()
+        self.assertEqual(tab.get_text(), "Plain text without a heading")
+        tab._keyboard_quit()
+        self.wait_for(lambda: tab._active_date_popover is None)
+        self.assertFalse(tab.buffer.get_modified())
+
+    def test_timestamp_reports_conflicting_changes_instead_of_overwriting(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("<2026-11-05 Thu>")
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(5))
+        tab.present()
+        tab.insert_timestamp()
+        popover = tab._active_date_popover
+        popover.entry.set_text("2026-11-06")
+        tab.buffer.insert(tab.buffer.get_iter_at_offset(7), "changed")
+        text = tab.get_text()
+        with patch.object(tab, "toast") as toast:
+            popover._apply()
+            toast.assert_called_once_with("The text has changed. Insert the timestamp again.")
+        self.assertEqual(tab.get_text(), text)
+        self.wait_for(lambda: tab._active_date_popover is None)
+
     def test_line_numbers_default_off_and_update_existing_and_new_tabs(self):
         first = self.app.new_tab()
         second = self.app.new_window().new_tab()

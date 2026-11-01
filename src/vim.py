@@ -94,6 +94,7 @@ class EditorTab(Adw.Bin):
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": app.show_agenda,
             "C-c f": self.window.show_files,
+            "C-c period": self.insert_timestamp,
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
             "C-x C-s": self.save,
@@ -383,6 +384,53 @@ class EditorTab(Adw.Bin):
         edit, message = change(lines, idx)
         self.apply_edit(edit)
         return True, message
+
+    def insert_timestamp(self):
+        if self._active_date_popover is not None:
+            self._active_date_popover.popdown()
+            return
+        buf = self.buffer
+        cursor = buf.get_iter_at_mark(buf.get_insert())
+        start = end = cursor.get_offset()
+        initial = None
+        for match in org.ACTIVE_TS_RE.finditer(self.get_text()):
+            if match.start() <= start < match.end():
+                initial = org.Timestamp.parse(match.group(0))
+                if initial is not None:
+                    start, end = match.span()
+                break
+        original = buf.get_text(buf.get_iter_at_offset(start), buf.get_iter_at_offset(end), True)
+        start_mark = buf.create_mark(None, buf.get_iter_at_offset(start), True)
+        end_mark = buf.create_mark(None, buf.get_iter_at_offset(end), False)
+        popover = DatePopover("Timestamp", initial, allow_remove=False)
+        self._active_date_popover = popover
+        popover.set_parent(self.editor_box)
+        popover.set_pointing_to(self._cursor_rect())
+
+        def on_apply(_popover, timestamp):
+            first = buf.get_iter_at_mark(start_mark)
+            last = buf.get_iter_at_mark(end_mark)
+            if buf.get_text(first, last, True) != original:
+                self.toast("The text has changed. Insert the timestamp again.")
+                return
+            buf.begin_user_action()
+            buf.delete(first, last)
+            buf.insert(buf.get_iter_at_mark(start_mark), timestamp.format())
+            buf.place_cursor(buf.get_iter_at_mark(end_mark))
+            buf.end_user_action()
+            self.view.scroll_to_mark(buf.get_insert(), 0.1, False, 0, 0)
+
+        def on_closed(p):
+            buf.delete_mark(start_mark)
+            buf.delete_mark(end_mark)
+            if self._active_date_popover is p:
+                self._active_date_popover = None
+            self.view.grab_focus()
+            GLib.idle_add(lambda: p.unparent() and False)
+
+        popover.connect("apply", on_apply)
+        popover.connect("closed", on_closed)
+        popover.popup()
 
     def edit_planning(self, kind):
         lines, idx = self._current_heading()

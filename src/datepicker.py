@@ -18,7 +18,7 @@ class DatePopover(Gtk.Popover):
 
     __gsignals__ = {"apply": (GObject.SignalFlags.RUN_FIRST, None, (object,))}
 
-    def __init__(self, title, initial=None, today=None):
+    def __init__(self, title, initial=None, today=None, allow_remove=True):
         super().__init__(has_arrow=True, position=Gtk.PositionType.BOTTOM)
         self.today = today or dt.date.today()
         self.timestamp = None
@@ -41,7 +41,7 @@ class DatePopover(Gtk.Popover):
         box.append(self.calendar)
 
         buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
-        if initial:
+        if initial and allow_remove:
             remove = Gtk.Button(label="_Remove", use_underline=True, css_classes=["destructive-action"])
             remove.connect("clicked", lambda *_: self._emit(None))
             buttons.append(remove)
