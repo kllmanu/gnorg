@@ -36,7 +36,7 @@ class AgendaWindow(Adw.ApplicationWindow):
         self.buffer = GtkSource.Buffer(highlight_syntax=False, highlight_matching_brackets=False)
         self.view = GtkSource.View(
             buffer=self.buffer, editable=False, cursor_visible=True, monospace=True,
-            highlight_current_line=True, css_classes=["vimtext-editor"],
+            highlight_current_line=True, css_classes=["organizer-editor"],
             top_margin=8, bottom_margin=8, left_margin=8, right_margin=8)
         scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True)
         self.view_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -89,7 +89,7 @@ class AgendaWindow(Adw.ApplicationWindow):
     def _update_scheme(self, render=True):
         dark = Adw.StyleManager.get_default().get_dark()
         schemes = GtkSource.StyleSchemeManager.get_default()
-        scheme = schemes.get_scheme("vimtext-dark" if dark else "vimtext") or \
+        scheme = schemes.get_scheme("organizer-dark" if dark else "organizer") or \
             schemes.get_scheme("Adwaita-dark" if dark else "Adwaita")
         self.buffer.set_style_scheme(scheme)
         table = self.buffer.get_tag_table()

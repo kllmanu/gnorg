@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Org mode syntax highlighting for Vimtext -->
+<!-- Org mode syntax highlighting for Organizer -->
 <language id="org" name="Org" version="2.0" _section="Markup">
   <metadata>
     <property name="mimetypes">text/org;text/x-org</property>

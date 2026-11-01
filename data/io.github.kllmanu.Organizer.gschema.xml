@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="io.github.kllmanu.Vimtext" path="/io/github/kllmanu/Vimtext/">
+  <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
     <key name="zoom" type="i">
       <range min="30" max="400"/>
       <default>100</default>

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Vimtext – an Org mode editor for GNOME with Vim keybindings."""
-
 import datetime as dt
 import os
 import sys
@@ -18,8 +16,8 @@ from agenda import AgendaWindow  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 
-APP_ID = "io.github.kllmanu.Vimtext"
-APP_NAME = "Vimtext"
+APP_ID = "io.github.kllmanu.Organizer"
+APP_NAME = "Organizer"
 VERSION = "0.2.0"
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -109,7 +107,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self.view = GtkSource.View(
             buffer=self.buffer,
             monospace=True,
-            css_classes=["vimtext-editor"],
+            css_classes=["organizer-editor"],
             show_line_numbers=True,
             highlight_current_line=True,
             auto_indent=True,
@@ -240,7 +238,7 @@ class EditorWindow(Adw.ApplicationWindow):
     def _update_scheme(self):
         dark = Adw.StyleManager.get_default().get_dark()
         schemes = GtkSource.StyleSchemeManager.get_default()
-        scheme = schemes.get_scheme("vimtext-dark" if dark else "vimtext") or \
+        scheme = schemes.get_scheme("organizer-dark" if dark else "organizer") or \
             schemes.get_scheme("Adwaita-dark" if dark else "Adwaita")
         self.buffer.set_style_scheme(scheme)
 
@@ -602,7 +600,7 @@ class EditorWindow(Adw.ApplicationWindow):
         return True
 
 
-class VimtextApplication(Adw.Application):
+class OrganizerApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.zoom = None
@@ -737,7 +735,7 @@ class VimtextApplication(Adw.Application):
                 return "The heading was not found, refresh the agenda"
             edit, message = change(lines, idx)
             lines = org.apply_edit(lines, edit)
-            tmp = entry.path + ".vimtext-tmp"
+            tmp = entry.path + ".organizer-tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
             os.replace(tmp, entry.path)
@@ -843,7 +841,7 @@ class VimtextApplication(Adw.Application):
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
-            f'textview.vimtext-editor {{ font-family: "Iosevka", monospace; '
+            f'textview.organizer-editor {{ font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}px; }}")
         self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
         self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
@@ -856,11 +854,3 @@ class VimtextApplication(Adw.Application):
     def _on_quit(self, *_):
         for win in list(self.get_windows()):
             win.close()
-
-
-def main():
-    return VimtextApplication().run(sys.argv)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

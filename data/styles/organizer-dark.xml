@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="vimtext" name="Vimtext" version="1.0" parent-scheme="Adwaita">
-  <description>Adwaita with Org mode styles</description>
+<style-scheme id="organizer-dark" name="Organizer Dark" version="1.0" parent-scheme="Adwaita-dark">
+  <description>Adwaita Dark with Org mode styles</description>
 
-  <color name="blue" value="#1a5fb4"/>
-  <color name="orange" value="#c64600"/>
-  <color name="green" value="#26a269"/>
-  <color name="purple" value="#813d9c"/>
-  <color name="teal" value="#1f8a8a"/>
-  <color name="brown" value="#865e3c"/>
-  <color name="red" value="#c01c28"/>
-  <color name="grey" value="#77767b"/>
-  <color name="link" value="#1c71d8"/>
+  <color name="blue" value="#62a0ea"/>
+  <color name="orange" value="#ffa348"/>
+  <color name="green" value="#8ff0a4"/>
+  <color name="purple" value="#dc8add"/>
+  <color name="teal" value="#93ddc2"/>
+  <color name="brown" value="#cdab8f"/>
+  <color name="red" value="#ff7b63"/>
+  <color name="grey" value="#9a9996"/>
+  <color name="link" value="#99c1f1"/>
 
   <style name="org:heading-1" foreground="blue" bold="true"/>
   <style name="org:heading-2" foreground="orange" bold="true"/>
@@ -32,9 +32,9 @@
   <style name="org:verbatim" foreground="purple"/>
   <style name="org:strikethrough" strikethrough="true"/>
   <style name="org:meta" foreground="grey"/>
-  <style name="org:block" foreground="#4e57ba"/>
+  <style name="org:block" foreground="#a0a8f0"/>
   <style name="org:drawer" foreground="grey"/>
-  <style name="org:table" foreground="#4e57ba"/>
+  <style name="org:table" foreground="#a0a8f0"/>
 
   <!-- Text agenda -->
   <style name="org:agenda-structure" foreground="blue" bold="true"/>

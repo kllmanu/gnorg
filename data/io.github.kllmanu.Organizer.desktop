@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=Vimtext
+Name=Organizer
 Comment=Edit text files with Vim keybindings
-Exec=vimtext %F
+Exec=organizer %F
 Icon=accessories-text-editor
 Terminal=false
 Type=Application
