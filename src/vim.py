@@ -533,7 +533,11 @@ class EditorTab(Adw.Bin):
         dialog.open(self.window, None, on_done)
 
     def load(self, file, then=None):
+        app = self.get_application()
+
         def on_loaded(f, res):
+            if self.get_application() is not app:
+                return
             try:
                 _ok, contents, _etag = f.load_contents_finish(res)
             except GLib.Error as e:
@@ -552,6 +556,7 @@ class EditorTab(Adw.Bin):
 
     def _set_file(self, file, text, raw=None):
         self.file = file
+        self.get_application().remember_file(file)
         self.buffer.begin_irreversible_action()
         self.buffer.set_text(text)
         self.buffer.end_irreversible_action()
@@ -615,6 +620,7 @@ class EditorTab(Adw.Bin):
                 self.file = f
                 self._update_language()
             self.buffer.set_modified(False)
+            self.get_application().remember_file(f)
             self._update_title()
             self.toast(f"“{f.get_basename()}” written, {len(data)} bytes")
             self.get_application().queue_agenda_refresh()
@@ -683,6 +689,15 @@ class EditorWindow(Adw.ApplicationWindow):
         self.tabs.connect("notify::selected-page", self._on_selected)
         self.tabs.connect("close-page", self._on_close_page)
         self.connect("close-request", self._on_close_request)
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(keys)
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        tab = self.active_tab
+        if tab is None:
+            return False
+        return tab._org_key_sequences._on_key_pressed(controller, keyval, keycode, state)
 
     @property
     def active_tab(self):
@@ -694,6 +709,7 @@ class EditorWindow(Adw.ApplicationWindow):
 
     def new_tab(self):
         tab = EditorTab(self)
+        tab.remove_controller(tab._org_key_sequences.controller)
         tab.page = self.tabs.append(tab)
         self.tabs.set_selected_page(tab.page)
         tab._update_title()
@@ -758,6 +774,7 @@ class OrganizerApplication(Adw.Application):
         self.org_indent_enabled = True
         self._quitting = False
         self._session_restored = False
+        self.recent_files = []
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -766,6 +783,7 @@ class OrganizerApplication(Adw.Application):
         self.settings = self._load_settings()
         if self.settings:
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
+            self.recent_files = self.settings.get_strv("recent-files")
 
         language_specs = data_path("language-specs")
         if language_specs:
@@ -863,15 +881,23 @@ class OrganizerApplication(Adw.Application):
                 if w.file and w.file.equal(file):
                     win = w
         if win:
+            self.remember_file(file)
             win.present()
             if then:
                 then(win)
             return win
+
         win = self.new_tab()
         win.file = file
         win.load(file, (lambda: then(win)) if then else None)
         win.present()
         return win
+
+    def remember_file(self, file):
+        uri = file.get_uri()
+        self.recent_files = [uri] + [item for item in self.recent_files if item != uri][:19]
+        if self.settings:
+            self.settings.set_strv("recent-files", self.recent_files)
 
     # ---------- Org agenda ----------
 
@@ -937,6 +963,9 @@ class OrganizerApplication(Adw.Application):
     def _on_agenda_closed(self, win):
         if self.agenda is win:
             self.agenda = None
+        windows = self.editor_windows()
+        if windows and windows[0].active_tab:
+            windows[0].active_tab.present()
         return False
 
     def queue_agenda_refresh(self):
@@ -956,7 +985,8 @@ class OrganizerApplication(Adw.Application):
     def show_buffers(self):
         window = self.get_active_window()
         current = window.active_tab if isinstance(window, EditorWindow) else None
-        BufferPicker(self.editor_tabs(), current).present(window)
+        files = [Gio.File.new_for_uri(uri) for uri in self.recent_files]
+        BufferPicker(self.editor_tabs(), current, files).present(window)
 
     def show_preferences(self):
         dialog = Adw.PreferencesDialog(title="Preferences")

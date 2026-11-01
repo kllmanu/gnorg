@@ -1,4 +1,4 @@
-"""Keyboard-first completion for open editor tabs."""
+"""Keyboard-first completion for open tabs and recent files."""
 
 import os
 
@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 
 def matches_buffer(query, name, path):
@@ -16,11 +16,14 @@ def matches_buffer(query, name, path):
 
 
 class BufferPicker(Gtk.Popover):
-    def __init__(self, tabs, current=None):
+    def __init__(self, tabs, current=None, recent_files=()):
         super().__init__(position=Gtk.PositionType.BOTTOM)
         self.tabs = [tab for tab in tabs if tab is not current]
         if current in tabs:
             self.tabs.append(current)
+        self.recent_files = [
+            file for file in recent_files
+            if not any(tab.file is not None and tab.file.equal(file) for tab in tabs)]
         self.results = []
         self.search = Gtk.SearchEntry(placeholder_text="Search documents", hexpand=True)
         self.search.connect("changed", self._filter)
@@ -58,23 +61,25 @@ class BufferPicker(Gtk.Popover):
         self.popup()
         self.search.grab_focus()
 
-    def close(self):
+    def close(self, restore_focus=True):
+        self._restore_focus = restore_focus
         self.popdown()
 
     def _on_closed(self, *_):
-        tab = getattr(self.window, "active_tab", None)
-        if tab:
-            tab.view.grab_focus()
-        else:
-            self.window.view.grab_focus()
         GLib.idle_add(self._unparent)
 
     def _unparent(self):
         self.unparent()
+        if getattr(self, "_restore_focus", True):
+            tab = getattr(self.window, "active_tab", None)
+            if tab:
+                tab.view.grab_focus()
+            else:
+                self.window.view.grab_focus()
         return GLib.SOURCE_REMOVE
 
     def _open_file(self):
-        self.close()
+        self.close(restore_focus=False)
         tab = getattr(self.window, "active_tab", None)
         if tab:
             tab.open_dialog()
@@ -82,7 +87,7 @@ class BufferPicker(Gtk.Popover):
             self.window._find_file()
 
     def _close_tab(self, tab):
-        self.close()
+        self.close(restore_focus=False)
         tab.close()
 
     def _filter(self, *_):
@@ -110,6 +115,20 @@ class BufferPicker(Gtk.Popover):
             close_button.connect("clicked", lambda _button, document=tab: self._close_tab(document))
             row.add_suffix(close_button)
             self.listbox.append(row)
+        for file in self.recent_files:
+            name = file.get_basename()
+            path = file.get_path() or file.get_uri()
+            if not matches_buffer(query, name, path):
+                continue
+            self.results.append(file)
+            directory = os.path.dirname(path)
+            home = GLib.get_home_dir()
+            if directory == home or directory.startswith(home + os.sep):
+                directory = "~" + directory[len(home):]
+            row = Adw.ActionRow(title=name, subtitle=directory, use_markup=False,
+                                title_lines=1, subtitle_lines=1, activatable=True)
+            row.add_suffix(Gtk.Label(label="Recent", css_classes=["dim-label"]))
+            self.listbox.append(row)
         self.empty.set_visible(not self.results)
         if self.results:
             self.listbox.select_row(self.listbox.get_row_at_index(0))
@@ -121,8 +140,11 @@ class BufferPicker(Gtk.Popover):
 
     def _activate(self, index):
         tab = self.results[index]
-        self.close()
-        tab.present()
+        self.close(restore_focus=False)
+        if isinstance(tab, Gio.File):
+            self.window.get_application().open_file(tab)
+        else:
+            tab.present()
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         modifiers = state & Gtk.accelerator_get_default_mod_mask()

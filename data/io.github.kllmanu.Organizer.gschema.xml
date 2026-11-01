@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
+    <key name="recent-files" type="as">
+      <default>[]</default>
+      <summary>Recently opened files</summary>
+      <description>The 20 most recently opened file URIs, newest first, for document completion.</description>
+    </key>
     <key name="window-width" type="i">
       <range min="1" max="2147483647"/>
       <default>960</default>
