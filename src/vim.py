@@ -822,6 +822,7 @@ class OrganizerApplication(Adw.Application):
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
         self.show_line_numbers = False
+        self.hide_weekends = True
         self._quitting = False
         self._session_restored = False
         self.recent_files = []
@@ -839,6 +840,7 @@ class OrganizerApplication(Adw.Application):
         if self.settings:
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
+            self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
 
         language_specs = data_path("language-specs")
@@ -1075,6 +1077,13 @@ class OrganizerApplication(Adw.Application):
         row.add_suffix(choose)
         row.set_activatable_widget(choose)
         group.add(row)
+        weekends_row = Adw.SwitchRow(
+            title="Hide Weekends",
+            subtitle="Show only Monday through Friday in the agenda.",
+            active=self.hide_weekends)
+        weekends_row.connect(
+            "notify::active", lambda row, *_: self.set_hide_weekends(row.get_active()))
+        group.add(weekends_row)
         page.add(group)
         dialog.add(page)
 
@@ -1115,6 +1124,14 @@ class OrganizerApplication(Adw.Application):
             self.settings.set_boolean("show-line-numbers", enabled)
         for tab in self.editor_tabs():
             tab.view.set_show_line_numbers(enabled)
+
+    def set_hide_weekends(self, enabled):
+        self.hide_weekends = enabled
+        if self.settings:
+            self.settings.set_boolean("hide-weekends", enabled)
+        for window in self.editor_windows():
+            if window.agenda is not None:
+                window.agenda.refresh()
 
     def _on_about(self, *_):
         about = Adw.AboutDialog(

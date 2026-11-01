@@ -69,6 +69,17 @@ class TabTests(unittest.TestCase):
         for tab in (first, second, third):
             self.assertFalse(tab.view.get_show_line_numbers())
 
+    def find_switch(self, widget, title):
+        if isinstance(widget, Adw.SwitchRow) and widget.get_title() == title:
+            return widget
+        child = widget.get_first_child()
+        while child is not None:
+            found = self.find_switch(child, title)
+            if found is not None:
+                return found
+            child = child.get_next_sibling()
+        return None
+
     def test_line_numbers_preference_switch_updates_editor(self):
         tab = self.app.new_tab()
         tab.present()
@@ -76,18 +87,7 @@ class TabTests(unittest.TestCase):
         self.app.show_preferences()
         dialog = tab.window.get_visible_dialog()
 
-        def find_switch(widget):
-            if isinstance(widget, Adw.SwitchRow) and widget.get_title() == "Show Line Numbers":
-                return widget
-            child = widget.get_first_child()
-            while child is not None:
-                found = find_switch(child)
-                if found is not None:
-                    return found
-                child = child.get_next_sibling()
-            return None
-
-        row = find_switch(dialog)
+        row = self.find_switch(dialog, "Show Line Numbers")
         self.assertIsNotNone(row)
         self.assertFalse(row.get_active())
         row.set_active(True)
@@ -96,14 +96,16 @@ class TabTests(unittest.TestCase):
         self.assertFalse(tab.view.get_show_line_numbers())
         dialog.close()
 
-    def test_line_numbers_setting_is_restored_at_startup(self):
+    def test_editor_and_agenda_settings_are_restored_at_startup(self):
         directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
         source = Gio.SettingsSchemaSource.new_from_directory(
             directory, Gio.SettingsSchemaSource.get_default(), False)
         schema = source.lookup("io.github.kllmanu.Organizer", False)
         settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
         self.assertFalse(settings.get_boolean("show-line-numbers"))
+        self.assertTrue(settings.get_boolean("hide-weekends"))
         settings.set_boolean("show-line-numbers", True)
+        settings.set_boolean("hide-weekends", False)
         app = OrganizerApplication()
         app.set_application_id("io.github.kllmanu.Organizer.LineNumberTests")
         app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
@@ -115,6 +117,12 @@ class TabTests(unittest.TestCase):
         self.addCleanup(tab.window.destroy)
         self.assertTrue(app.show_line_numbers)
         self.assertTrue(tab.view.get_show_line_numbers())
+        self.assertFalse(app.hide_weekends)
+        app.show_agenda(tab.window)
+        self.assertIsNotNone(tab.window.agenda.time_grid.get_child_at(6, 0))
+        app.set_hide_weekends(True)
+        self.assertTrue(settings.get_boolean("hide-weekends"))
+        self.assertIsNone(tab.window.agenda.time_grid.get_child_at(5, 0))
         app.set_show_line_numbers(False)
         self.assertFalse(settings.get_boolean("show-line-numbers"))
 
@@ -234,6 +242,55 @@ class TabTests(unittest.TestCase):
         self.assertIs(tab.window.active_view, tab)
         self.assertEqual(tab.window.stack.get_visible_child_name(), "files")
         self.assertIsNotNone(tab.window.lookup_action("save"))
+
+    def test_hide_weekends_preference_updates_agendas_and_preserves_entries(self):
+        import datetime as dt
+        import org
+
+        first = self.app.new_tab()
+        second = self.app.new_window().new_tab()
+        self.app.show_agenda(first.window)
+        self.app.show_agenda(second.window)
+        agendas = [first.window.agenda, second.window.agenda]
+        start = agendas[0].start
+        saturday = start + dt.timedelta(days=5)
+        entries = org.parse_entries(
+            f"* Weekend event\n<{saturday.isoformat()} 10:00>\n", "/org/tasks.org")
+        self.addCleanup(self.app.set_hide_weekends, True)
+        with patch.object(self.app, "agenda_entries", return_value=("/org", ["/org/tasks.org"], entries)):
+            for agenda in agendas:
+                agenda.refresh()
+                self.assertTrue(self.app.hide_weekends)
+                self.assertIsNotNone(agenda.time_grid.get_child_at(4, 0))
+                self.assertIsNone(agenda.time_grid.get_child_at(5, 0))
+                self.assertIsNone(agenda.day_headers.get_child_at(5, 0))
+                self.assertEqual(len(agenda.days[saturday]), 1)
+                self.assertEqual(agenda.entry_buttons, [])
+                self.assertTrue(agenda.week_label.get_label().endswith(
+                    org.format_date(start + dt.timedelta(days=4), with_year=True)))
+            first.present()
+            self.app.show_preferences()
+            dialog = self.app.get_active_window().get_visible_dialog()
+            row = self.find_switch(dialog, "Hide Weekends")
+            self.assertIsNotNone(row)
+            self.assertTrue(row.get_active())
+            settings = Mock()
+            with patch.object(self.app, "settings", settings):
+                row.set_active(False)
+                settings.set_boolean.assert_called_once_with("hide-weekends", False)
+            for agenda in agendas:
+                self.assertIsNotNone(agenda.time_grid.get_child_at(6, 0))
+                self.assertIsNotNone(agenda.day_headers.get_child_at(6, 0))
+                self.assertEqual(len(agenda.entry_buttons), 1)
+                self.assertEqual(agenda.start, start)
+            row.set_active(True)
+            for agenda in agendas:
+                self.assertIsNone(agenda.time_grid.get_child_at(5, 0))
+                self.assertEqual(agenda.entry_buttons, [])
+                agenda.shift(1)
+                self.assertEqual((agenda.start - start).days, 7)
+                self.assertIsNone(agenda.time_grid.get_child_at(5, 0))
+            dialog.close()
 
     def test_view_switcher_preserves_selected_file_and_unsaved_edits(self):
         first = self.app.new_tab()
@@ -384,6 +441,8 @@ class TabTests(unittest.TestCase):
         import datetime as dt
         import org
 
+        self.app.set_hide_weekends(False)
+        self.addCleanup(self.app.set_hide_weekends, True)
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "tasks.org")
             today = dt.date.today()

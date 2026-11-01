@@ -185,7 +185,9 @@ class AgendaView(Adw.Bin):
         directory, files, entries = self.app.agenda_entries()
         today = dt.date.today()
         self.days = org.build_agenda(entries, self.start, 7, today)
-        end = self.start + dt.timedelta(days=6)
+        visible_days = [(date, items) for date, items in self.days.items()
+                        if not self.app.hide_weekends or date.weekday() < 5]
+        end = visible_days[-1][0]
         self.week_label.set_label(
             f"{org.format_date(self.start, with_year=True)} – "
             f"{org.format_date(end, with_year=True)}")
@@ -206,7 +208,7 @@ class AgendaView(Adw.Bin):
                 child = grid.get_first_child()
         self.entry_buttons = []
         self.selected_item = None
-        for column_index, (date, items) in enumerate(self.days.items()):
+        for column_index, (date, items) in enumerate(visible_days):
             heading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2,
                               hexpand=True, width_request=90,
                               margin_top=8, margin_bottom=8, css_classes=["calendar-day"])
