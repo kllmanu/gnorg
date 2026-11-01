@@ -1141,7 +1141,8 @@ class OrganizerApplication(Adw.Application):
         page.add(editor_group)
         group = Adw.PreferencesGroup(
             title="Calendar",
-            description="All .org files in this folder and its subfolders appear in the calendar.")
+            description="Active timestamps in these .org files appear in the calendar. "
+                        "Scheduled entries and deadlines are excluded.")
         row = Adw.ActionRow(title="Calendar Folder", subtitle=short_path(self.agenda_directory()))
         choose = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
                             tooltip_text="Choose Folder", css_classes=["flat"])

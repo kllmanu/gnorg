@@ -18,7 +18,7 @@ from keybindings import OrgKeySequences  # noqa: E402
 def event_minutes(item):
     start = item.ts.time.hour * 60 + item.ts.time.minute
     end = (item.ts.end_time.hour * 60 + item.ts.end_time.minute
-           if item.ts.end_time else start + 30)
+           if item.ts.end_time else start + 60)
     if end <= start:
         end = 1440
     return start, min(end, 1440)
@@ -194,7 +194,9 @@ class AgendaView(Adw.Bin):
         directory, files, entries = self.app.agenda_entries()
         today = dt.date.today()
         self.today_button.set_sensitive(self.start != org.week_start(today))
-        self.days = org.build_agenda(entries, self.start, 7, today)
+        self.days = {
+            date: [item for item in items if item.kind == "timestamp"]
+            for date, items in org.build_agenda(entries, self.start, 7, today).items()}
         visible_days = [(date, items) for date, items in self.days.items()
                         if not self.app.hide_weekends or date.weekday() < 5]
         end = visible_days[-1][0]
@@ -243,8 +245,7 @@ class AgendaView(Adw.Bin):
                                    css_classes=["calendar-day"])
             overlay.add_overlay(fixed)
             self.time_grid.attach(overlay, column_index, 0, 1, 1)
-            timed = [item for item in items if item.ts.time
-                     and item.kind not in ("deadline-upcoming", "deadline-overdue", "scheduled-overdue")]
+            timed = [item for item in items if item.ts.time]
             lanes = event_lanes(timed)
             blocks = []
             for item in items:
@@ -268,7 +269,9 @@ class AgendaView(Adw.Bin):
 
     def _entry_button(self, item):
         entry = item.entry
-        button = Gtk.Button(tooltip_text=f"{entry.display_title}\n{entry.path}",
+        title = item.timestamp_title or (
+            f"{entry.keyword} {entry.display_title}" if entry.keyword else entry.display_title)
+        button = Gtk.Button(tooltip_text=f"{title}\n{entry.path}",
                             css_classes=["calendar-event", "deadline"] if "deadline" in item.kind
                             else ["calendar-event"])
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1,
@@ -281,14 +284,17 @@ class AgendaView(Adw.Bin):
             detail = time
         content.append(Gtk.Label(label=detail, xalign=0, ellipsize=Pango.EllipsizeMode.END,
                                  css_classes=["caption", "dim-label"]))
-        title = f"{entry.keyword} {entry.display_title}" if entry.keyword else entry.display_title
         content.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
                                  css_classes=["dim-label"] if entry.is_done else []))
         button.set_child(content)
         button.connect("notify::has-focus",
                        lambda widget, *_: self._select(item) if widget.has_focus() else None)
-        button.connect("clicked", lambda *_: self.app.open_location(entry.path, entry.line))
+        button.connect("clicked", lambda *_: self._open_item(item))
         return button
+
+    def _open_item(self, item):
+        line = item.timestamp_line if item.timestamp_line is not None else item.entry.line
+        self.app.open_location(item.entry.path, line)
 
     def _draw_hours(self, cr, width, height, date):
         dark = Adw.StyleManager.get_default().get_dark()
@@ -363,8 +369,7 @@ class AgendaView(Adw.Bin):
 
     def open_entry(self):
         if self.selected_item:
-            entry = self.selected_item.entry
-            self.app.open_location(entry.path, entry.line)
+            self._open_item(self.selected_item)
 
     def cycle_todo(self):
         if self.selected_item is None:

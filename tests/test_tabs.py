@@ -617,7 +617,7 @@ class TabTests(unittest.TestCase):
                 f"* Second\nSCHEDULED: <{day.isoformat()} 09:15-10:00>\n"
                 f"* Third\nSCHEDULED: <{day.isoformat()} 11:00>\n")
         items = org.build_agenda(org.parse_entries(text), day, 1, day)[day]
-        self.assertEqual(event_minutes(items[0]), (540, 570))
+        self.assertEqual(event_minutes(items[0]), (540, 600))
         self.assertEqual(event_minutes(items[1]), (555, 600))
         self.assertEqual(event_lanes(items), {0: (0, 2), 1: (1, 2), 2: (0, 1)})
 
@@ -630,7 +630,7 @@ class TabTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "tasks.org")
             today = dt.date.today()
-            text = (f"* TODO Dated task\nSCHEDULED: <{today.isoformat()} 10:00>\n"
+            text = (f"* TODO Dated task\n<{today.isoformat()} 10:00>\n"
                     "* TODO Undated task\n")
             with open(path, "w") as stream:
                 stream.write(text)
@@ -645,7 +645,7 @@ class TabTests(unittest.TestCase):
                 button.emit("clicked")
                 self.assertIs(tab.window.active_tab, tab)
                 self.assertEqual(len(self.app.editor_tabs()), 1)
-                self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line(), 0)
+                self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line(), 1)
                 agenda.present()
                 agenda_title = tab.window.get_title()
                 agenda._move(1)
@@ -667,6 +667,72 @@ class TabTests(unittest.TestCase):
                         tab.buffer.set_modified(False)
                         self.app._on_quit()
                     save_session.assert_called_once_with()
+
+    def test_calendar_shows_only_standalone_active_timestamps(self):
+        import datetime as dt
+        import org
+
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        day = agenda.start
+        overdue = day - dt.timedelta(days=7)
+        upcoming = dt.date.today() + dt.timedelta(days=2)
+        text = (
+            f"* TODO Other stuff SCHEDULED: <{day.isoformat()}>\n"
+            f"* TODO Inline deadline DEADLINE: <{day.isoformat()}>\n"
+            f"* TODO Separated planning\n\nSCHEDULED: <{day.isoformat()}>\n"
+            f"* TODO Scheduled\nSCHEDULED: <{day.isoformat()} 09:00>\n"
+            f"* TODO Deadline\nDEADLINE: <{day.isoformat()} 10:00>\n"
+            f"* TODO Overdue\nSCHEDULED: <{overdue.isoformat()}>\n"
+            f"DEADLINE: <{overdue.isoformat()}>\n"
+            f"* TODO Upcoming\nDEADLINE: <{upcoming.isoformat()}>\n"
+            f"* Inactive\n[{day.isoformat()}]\n"
+            f"* All day\n<{day.isoformat()}>\n"
+            f"* Repeating\n<{day.isoformat()} 11:00 +1w>\n"
+            f"* TODO Mixed\nSCHEDULED: <{day.isoformat()} 08:00>\n"
+            f"DEADLINE: <{day.isoformat()}>\n<{day.isoformat()} 12:00>\n")
+        entries = org.parse_entries(text, "/org/events.org")
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/events.org"], entries)):
+            agenda.refresh()
+            self.assertEqual(
+                {item.entry.display_title for item, _ in agenda.entry_buttons},
+                {"All day", "Repeating", "Mixed"})
+            self.assertTrue(all(item.kind == "timestamp"
+                                for items in agenda.days.values() for item in items))
+            agenda.shift(1)
+            self.assertEqual(
+                [item.entry.display_title for item, _ in agenda.entry_buttons], ["Repeating"])
+
+    def test_calendar_labels_timestamps_with_adjacent_text_and_opens_source_line(self):
+        import org
+
+        self.app.show_agenda()
+        agenda = self.app.agenda
+        date = agenda.start.isoformat()
+        text = (f"* TODO Other stuff\nSCHEDULED: <{date}>\n\n"
+                f"<{date}> Asdf\n"
+                f"Another event <{date} 10:00>\n"
+                f"<{date} 11:00>\n")
+        entries = org.parse_entries(text, "/org/events.org")
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/events.org"], entries)):
+            agenda.refresh()
+            labels = {button.get_child().get_last_child().get_label(): (item, button)
+                      for item, button in agenda.entry_buttons}
+            self.assertEqual(set(labels), {"Asdf", "Another event", "TODO Other stuff"})
+            timed_item, timed_button = labels["Another event"]
+            self.assertEqual(event_minutes(timed_item), (600, 660))
+            self.assertEqual(timed_button.get_size_request()[1], 59)
+            item, button = labels["Asdf"]
+            self.assertEqual(item.timestamp_line, 3)
+            with patch.object(self.app, "open_location") as open_location:
+                button.emit("clicked")
+                open_location.assert_called_once_with("/org/events.org", 3)
+                open_location.reset_mock()
+                agenda.selected_item = item
+                agenda.open_entry()
+                open_location.assert_called_once_with("/org/events.org", 3)
 
     def test_session_restores_file_tabs_in_order_without_duplicates(self):
         with tempfile.TemporaryDirectory() as directory:

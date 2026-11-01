@@ -189,6 +189,17 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(meeting.display_title, "Meeting")
         self.assertEqual(plants.scheduled.repeater, ("+", 1, "w"))
 
+    def test_inline_and_separated_planning_dates_are_not_standalone_timestamps(self):
+        text = (
+            "* TODO Other stuff SCHEDULED: <2026-11-03 Tue>\n"
+            "* TODO Inline deadline DEADLINE: <2026-11-04 Wed>\n"
+            "* TODO Separated\n\nSCHEDULED: <2026-11-03 Tue>\n"
+            "DEADLINE: <2026-11-04 Wed>\n"
+            "* Mixed SCHEDULED: <2026-11-03 Tue> <2026-11-05 Thu>\n")
+        entries = org.parse_entries(text)
+        self.assertTrue(all(not entry.timestamps for entry in entries[:3]))
+        self.assertEqual(entries[3].timestamps, [Timestamp(D(2026, 11, 5))])
+
     def test_heading_variants(self):
         self.assertEqual(org.parse_heading("* TODO"), (1, "TODO", None, "", []))
         self.assertEqual(org.parse_heading("** TODOS are fun"), (2, None, None, "TODOS are fun", []))

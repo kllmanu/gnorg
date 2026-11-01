@@ -400,6 +400,7 @@ class Entry:
     deadline: Timestamp | None = None
     closed: Timestamp | None = None
     timestamps: list = field(default_factory=list)
+    timestamp_sources: list = field(default_factory=list)
 
     @property
     def is_todo(self):
@@ -457,6 +458,7 @@ def parse_entries(text, path=None):
             level, keyword, priority, title, tags = heading
             current = Entry(path, i, level, keyword, priority, title, tags, heading_text=line)
             current.timestamps.extend(_active_timestamps(title))
+            current.timestamp_sources.extend((None, i) for _ in current.timestamps)
             entries.append(current)
             in_drawer = in_block = False
             if i + 1 < len(lines) and (planning := parse_planning(lines[i + 1])):
@@ -478,11 +480,15 @@ def parse_entries(text, path=None):
         if DRAWER_START_RE.match(line) and not DRAWER_END_RE.match(line):
             in_drawer = True
             continue
-        current.timestamps.extend(_active_timestamps(line))
+        timestamps = _active_timestamps(line)
+        current.timestamps.extend(timestamps)
+        title = display_text(PLANNING_ITEM_RE.sub("", line)) or None
+        current.timestamp_sources.extend((title, i) for _ in timestamps)
     return entries
 
 
 def _active_timestamps(text):
+    text = PLANNING_ITEM_RE.sub("", text)
     return [ts for raw in ACTIVE_TS_RE.findall(text) if (ts := Timestamp.parse(raw))]
 
 
@@ -602,6 +608,8 @@ class AgendaItem:
     date: dt.date
     ts: Timestamp
     days: int = 0  # days overdue, or days until the deadline
+    timestamp_title: str | None = None
+    timestamp_line: int | None = None
 
     @property
     def label(self):
@@ -654,9 +662,12 @@ def build_agenda(entries, start, days, today):
                     until = (dl.date - today).days
                     if 0 < until <= warn:
                         add(AgendaItem(e, "deadline-upcoming", today, dl, until))
-        for ts in e.timestamps:
+        for index, ts in enumerate(e.timestamps):
+            title, line = (e.timestamp_sources[index]
+                           if index < len(e.timestamp_sources) else (None, None))
             for d in ts.occurrences(start, end):
-                add(AgendaItem(e, "timestamp", d, ts))
+                add(AgendaItem(e, "timestamp", d, ts,
+                               timestamp_title=title, timestamp_line=line))
 
     for items in agenda.values():
         items.sort(key=lambda it: (
