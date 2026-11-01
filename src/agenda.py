@@ -172,9 +172,9 @@ class AgendaWindow(Adw.ApplicationWindow):
     # ---------- Commands ----------
 
     def _find_file(self):
-        window = next(iter(self.app.editor_windows()), None) or self.app.new_window()
-        window.present()
-        window.open_dialog()
+        tab = next(iter(self.app.editor_tabs()), None) or self.app.new_tab()
+        tab.present()
+        tab.open_dialog()
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):

@@ -69,9 +69,14 @@ ZOOM_MIN = 30
 ZOOM_MAX = 400
 
 
-class EditorWindow(Adw.ApplicationWindow):
-    def __init__(self, app):
-        super().__init__(application=app, default_width=960, default_height=680)
+class EditorTab(Adw.Bin):
+    def __init__(self, window):
+        super().__init__()
+        self.window = window
+        app = window.get_application()
+        self.actions = Gio.SimpleActionGroup()
+        self.insert_action_group("win", self.actions)
+        self.page = None
         self.file = None
         self._force_close = False
         self._zoom_toast = None
@@ -99,7 +104,6 @@ class EditorWindow(Adw.ApplicationWindow):
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())
         self.buffer.connect("changed", lambda *_: app.queue_agenda_refresh())
-        self.connect("close-request", self._on_close_request)
         self._update_title()
         self._update_position()
 
@@ -130,11 +134,12 @@ class EditorWindow(Adw.ApplicationWindow):
     def _build_ui(self):
         self.title_widget = Adw.WindowTitle()
         header = Adw.HeaderBar(title_widget=self.title_widget)
+        self.header = header
 
         header.pack_start(Gtk.Button(icon_name="document-open-symbolic",
                                      tooltip_text="Open (Ctrl+O)", action_name="win.open"))
         header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                     tooltip_text="New Window (Ctrl+N)", action_name="win.new"))
+                                     tooltip_text="New Tab (Ctrl+N)", action_name="win.new"))
         header.pack_start(Gtk.Button(icon_name="x-office-calendar-symbolic",
                                      tooltip_text="Agenda (C-c a)", action_name="app.agenda"))
 
@@ -172,11 +177,21 @@ class EditorWindow(Adw.ApplicationWindow):
         status.append(self.position_label)
 
         toolbar_view = Adw.ToolbarView(content=self.editor_box)
-        toolbar_view.add_top_bar(header)
         toolbar_view.add_bottom_bar(status)
 
         self.toasts = Adw.ToastOverlay(child=toolbar_view)
-        self.set_content(self.toasts)
+        self.set_child(self.toasts)
+
+    def get_application(self):
+        return self.window.get_application()
+
+    def present(self):
+        self.window.tabs.set_selected_page(self.page)
+        self.window.present()
+        self.view.grab_focus()
+
+    def close(self):
+        self.window.tabs.close_page(self.page)
 
     def _setup_vim(self):
         self.vim = GtkSource.VimIMContext()
@@ -212,19 +227,20 @@ class EditorWindow(Adw.ApplicationWindow):
         def add(name, callback):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", lambda *_: callback())
-            self.add_action(action)
+            self.actions.add_action(action)
 
-        add("new", lambda: self.get_application().new_window().present())
+        add("new", lambda: self.window.new_tab().present())
+        add("close", self.close)
         add("open", self.open_dialog)
         add("save", self.save)
         add("save-as", self.save_as)
         vim_action = Gio.SimpleAction.new_stateful("vim-mode", None, GLib.Variant.new_boolean(True))
         vim_action.connect("change-state", self._on_vim_mode_changed)
-        self.add_action(vim_action)
+        self.actions.add_action(vim_action)
 
         wrap_action = Gio.SimpleAction.new_stateful("wrap", None, GLib.Variant.new_boolean(False))
         wrap_action.connect("change-state", self._on_wrap_changed)
-        self.add_action(wrap_action)
+        self.actions.add_action(wrap_action)
 
     def _on_vim_mode_changed(self, action, value):
         action.set_state(value)
@@ -260,7 +276,11 @@ class EditorWindow(Adw.ApplicationWindow):
         modified = self.buffer.get_modified()
         self.title_widget.set_title(("• " if modified else "") + name)
         self.title_widget.set_subtitle(subtitle)
-        self.set_title(f"{name} – {APP_NAME}")
+        if self.page is not None:
+            self.page.set_title(("• " if modified else "") + name)
+            self.page.set_tooltip(short_path(self.path) or name)
+        if self.window.active_tab is self:
+            self.window.set_title(f"{name} – {APP_NAME}")
 
     def _update_position(self):
         it = self.buffer.get_iter_at_mark(self.buffer.get_insert())
@@ -477,11 +497,11 @@ class EditorWindow(Adw.ApplicationWindow):
                 self.save(then=self.close)
             return True
         if cmd in ("qa", "qall", "qa!", "qall!"):
+            if cmd.endswith("!"):
+                for tab in self.get_application().editor_tabs():
+                    tab._force_close = True
             for win in list(self.get_application().get_windows()):
-                if cmd.endswith("!") and isinstance(win, EditorWindow):
-                    win.force_close()
-                else:
-                    win.close()
+                win.close()
             return True
         return False
 
@@ -503,7 +523,7 @@ class EditorWindow(Adw.ApplicationWindow):
             else:
                 self.get_application().open_file(file)
 
-        dialog.open(self, None, on_done)
+        dialog.open(self.window, None, on_done)
 
     def load(self, file, then=None):
         def on_loaded(f, res):
@@ -542,13 +562,13 @@ class EditorWindow(Adw.ApplicationWindow):
         language = manager.guess_language(name, content_type) or manager.get_language("org")
         self.buffer.set_language(language)
 
-    def save(self, then=None):
+    def save(self, then=None, on_cancel=None):
         if self.file is None:
-            self.save_as(then=then)
+            self.save_as(then=then, on_cancel=on_cancel)
         else:
-            self.save_to(self.file, then=then)
+            self.save_to(self.file, then=then, on_cancel=on_cancel)
 
-    def save_as(self, then=None):
+    def save_as(self, then=None, on_cancel=None):
         dialog = Gtk.FileDialog(title="Save File", filters=file_filters())
         if self.file:
             dialog.set_initial_file(self.file)
@@ -562,12 +582,14 @@ class EditorWindow(Adw.ApplicationWindow):
             try:
                 file = dlg.save_finish(res)
             except GLib.Error:
+                if on_cancel:
+                    on_cancel()
                 return
-            self.save_to(file, then=then)
+            self.save_to(file, then=then, on_cancel=on_cancel)
 
-        dialog.save(self, None, on_done)
+        dialog.save(self.window, None, on_done)
 
-    def save_to(self, file, then=None):
+    def save_to(self, file, then=None, on_cancel=None):
         start, end = self.buffer.get_bounds()
         text = self.buffer.get_text(start, end, True)
         if text and not text.endswith("\n"):
@@ -579,6 +601,8 @@ class EditorWindow(Adw.ApplicationWindow):
                 f.replace_contents_finish(res)
             except GLib.Error as e:
                 self.toast(f"Could not save file: {e.message}")
+                if on_cancel:
+                    on_cancel()
                 return
             if self.file is None or not self.file.equal(f):
                 self.file = f
@@ -598,9 +622,10 @@ class EditorWindow(Adw.ApplicationWindow):
         self._force_close = True
         self.close()
 
-    def _on_close_request(self, _win):
+    def request_close(self, finish):
         if self._force_close or not self.buffer.get_modified():
-            return False
+            finish(True)
+            return
 
         dialog = Adw.AlertDialog(
             heading="Save Changes?",
@@ -617,12 +642,76 @@ class EditorWindow(Adw.ApplicationWindow):
 
         def on_response(_dlg, response):
             if response == "discard":
-                self.force_close()
+                finish(True)
             elif response == "save":
-                self.save(then=self.force_close)
+                self.save(then=lambda: finish(True), on_cancel=lambda: finish(False))
+            else:
+                finish(False)
 
         dialog.connect("response", on_response)
-        dialog.present(self)
+        dialog.present(self.window)
+
+
+class EditorWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, default_width=960, default_height=680)
+        self._closing = False
+        self._force_close = False
+        self.tabs = Adw.TabView()
+        bar = Adw.TabBar(view=self.tabs, autohide=True)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.append(bar)
+        box.append(self.tabs)
+        self.tabs.set_vexpand(True)
+        self.toolbar_view = Adw.ToolbarView(content=box)
+        self._header = None
+        self.set_content(self.toolbar_view)
+        self.tabs.connect("notify::selected-page", self._on_selected)
+        self.tabs.connect("close-page", self._on_close_page)
+        self.connect("close-request", self._on_close_request)
+
+    @property
+    def active_tab(self):
+        page = self.tabs.get_selected_page()
+        return page.get_child() if page else None
+
+    def documents(self):
+        return [self.tabs.get_nth_page(i).get_child() for i in range(self.tabs.get_n_pages())]
+
+    def new_tab(self):
+        tab = EditorTab(self)
+        tab.page = self.tabs.append(tab)
+        self.tabs.set_selected_page(tab.page)
+        tab._update_title()
+        return tab
+
+    def _on_selected(self, *_):
+        tab = self.active_tab
+        if tab is None:
+            return
+        if self._header is not tab.header:
+            if self._header is not None:
+                self.toolbar_view.remove(self._header)
+            self._header = tab.header
+            self.toolbar_view.add_top_bar(self._header)
+        for name in tab.actions.list_actions():
+            self.add_action(tab.actions.lookup_action(name))
+        tab._update_title()
+        tab.view.grab_focus()
+
+    def _on_close_page(self, _tabs, page):
+        def finish(confirmed):
+            self.tabs.close_page_finish(page, confirmed)
+            if not self.tabs.get_n_pages() and not self._closing:
+                self._force_close = True
+                self.close()
+        page.get_child().request_close(finish)
+        return True
+
+    def _on_close_request(self, *_):
+        if self._force_close:
+            return False
+        self.get_application()._on_quit()
         return True
 
 
@@ -635,6 +724,7 @@ class OrganizerApplication(Adw.Application):
         self.agenda = None
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
+        self._quitting = False
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -680,11 +770,15 @@ class OrganizerApplication(Adw.Application):
         self.set_accels_for_action("win.open", ["<Ctrl>o"])
         self.set_accels_for_action("win.save", ["<Ctrl>s"])
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
-        self.set_accels_for_action("window.close", ["<Ctrl>w"])
+        self.set_accels_for_action("win.close", ["<Ctrl>w"])
         self.set_accels_for_action("app.preferences", ["<Ctrl>comma"])
 
     def do_activate(self):
-        self.new_window().present()
+        windows = self.editor_windows()
+        if windows:
+            windows[0].present()
+        else:
+            self.new_tab().present()
 
     def do_open(self, files, _n_files, _hint):
         for file in files:
@@ -692,14 +786,22 @@ class OrganizerApplication(Adw.Application):
 
     def new_window(self):
         win = EditorWindow(self)
-        win.view.grab_focus()
         return win
 
     def editor_windows(self):
         return [w for w in self.get_windows() if isinstance(w, EditorWindow)]
 
+    def editor_tabs(self):
+        return [tab for window in self.editor_windows() for tab in window.documents()]
+
+    def new_tab(self):
+        active = self.get_active_window()
+        windows = self.editor_windows()
+        window = active if isinstance(active, EditorWindow) else (windows[0] if windows else self.new_window())
+        return window.new_tab()
+
     def window_for_path(self, path):
-        for win in self.editor_windows():
+        for win in self.editor_tabs():
             if same_file(win.path, path):
                 return win
         return None
@@ -707,7 +809,7 @@ class OrganizerApplication(Adw.Application):
     def open_file(self, file, then=None):
         win = self.window_for_path(file.get_path()) if file.get_path() else None
         if win is None:
-            for w in self.editor_windows():
+            for w in self.editor_tabs():
                 if w.file and w.file.equal(file):
                     win = w
         if win:
@@ -715,7 +817,7 @@ class OrganizerApplication(Adw.Application):
             if then:
                 then(win)
             return win
-        win = self.new_window()
+        win = self.new_tab()
         win.load(file, (lambda: then(win)) if then else None)
         win.present()
         return win
@@ -850,7 +952,7 @@ class OrganizerApplication(Adw.Application):
         self.org_indent_enabled = enabled
         if self.settings:
             self.settings.set_boolean("org-indent-mode", enabled)
-        for window in self.editor_windows():
+        for window in self.editor_tabs():
             window.org_indent.set_enabled(enabled)
 
     def _on_about(self, *_):
@@ -887,16 +989,38 @@ class OrganizerApplication(Adw.Application):
         self.zoom_css.load_from_string(
             f'textview.organizer-editor {{ font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
-        for window in self.editor_windows():
+        for window in self.editor_tabs():
             window.org_indent.queue_refresh()
         self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
         self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
         if self.settings and self.settings.get_int("zoom") != zoom:
             self.settings.set_int("zoom", zoom)
         win = self.get_active_window()
-        if notify and isinstance(win, EditorWindow):
-            win.show_zoom(zoom)
+        if notify and isinstance(win, EditorWindow) and win.active_tab:
+            win.active_tab.show_zoom(zoom)
 
     def _on_quit(self, *_):
-        for win in list(self.get_windows()):
-            win.close()
+        if self._quitting:
+            return
+        self._quitting = True
+        tabs = iter(self.editor_tabs())
+
+        def check_next():
+            tab = next(tabs, None)
+            if tab is None:
+                for window in list(self.get_windows()):
+                    window.destroy()
+                self.agenda = None
+                self._quitting = False
+                self.quit()
+                return
+            tab.present()
+
+            def finish(confirmed):
+                if confirmed:
+                    check_next()
+                else:
+                    self._quitting = False
+            tab.request_close(finish)
+
+        check_next()
