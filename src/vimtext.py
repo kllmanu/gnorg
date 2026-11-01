@@ -840,7 +840,9 @@ class VimtextApplication(Adw.Application):
             return
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
-        self.zoom_css.load_from_string(f"textview.vimtext-editor {{ font-size: {font_size:g}px; }}")
+        self.zoom_css.load_from_string(
+            f'textview.vimtext-editor {{ font-family: "Iosevka", monospace; '
+            f"font-size: {font_size:g}px; }}")
         self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
         self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
         if self.settings and self.settings.get_int("zoom") != zoom:

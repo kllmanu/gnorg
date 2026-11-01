@@ -12,8 +12,8 @@
   <color name="grey" value="#9a9996"/>
   <color name="link" value="#99c1f1"/>
 
-  <style name="org:heading-1" foreground="blue" bold="true" scale="1.2"/>
-  <style name="org:heading-2" foreground="orange" bold="true" scale="1.1"/>
+  <style name="org:heading-1" foreground="blue" bold="true"/>
+  <style name="org:heading-2" foreground="orange" bold="true"/>
   <style name="org:heading-3" foreground="green" bold="true"/>
   <style name="org:heading-4" foreground="purple" bold="true"/>
   <style name="org:heading-5" foreground="teal" bold="true"/>
