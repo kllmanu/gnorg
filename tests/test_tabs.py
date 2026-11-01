@@ -541,8 +541,8 @@ class TabTests(unittest.TestCase):
             self.assertTrue(window._on_key_pressed(None, Gdk.KEY_c, 0, Gdk.ModifierType(0)))
             self.assertIs(window.active_view, window.agenda)
             self.assertEqual(window.get_title(), "Calendar – Organizer")
-            self.assertNotIn("C-c a", window.active_view._org_key_sequences.commands)
-        self.assertNotIn("C-c a", tab._org_key_sequences.commands)
+            self.assertIn("C-c a", window.active_view._org_key_sequences.commands)
+        self.assertIn("C-c a", tab._org_key_sequences.commands)
         self.assertIn("C-c C-c", tab._org_key_sequences.commands)
 
     def test_files_shortcut_without_open_files_creates_editor(self):
@@ -582,9 +582,10 @@ class TabTests(unittest.TestCase):
         self.assertIs(window._header.get_title_widget(), window.view_switcher)
         self.assertIs(window.switcher_bar.get_stack(), window.stack)
         pages = window.stack.get_pages()
-        self.assertEqual(pages.get_n_items(), 2)
-        self.assertEqual([pages.get_item(i).get_title() for i in range(2)], ["Files", "Calendar"])
-        self.assertTrue(all(pages.get_item(i).get_icon_name() for i in range(2)))
+        self.assertEqual(pages.get_n_items(), 3)
+        self.assertEqual([pages.get_item(i).get_title() for i in range(3)],
+                         ["Files", "Calendar", "Agenda"])
+        self.assertTrue(all(pages.get_item(i).get_icon_name() for i in range(3)))
         tab.present()
         window.view_switcher.set_view_switcher_enabled(False)
         self.wait_for(window.view_switcher.get_title_visible)
@@ -733,6 +734,186 @@ class TabTests(unittest.TestCase):
                 agenda.selected_item = item
                 agenda.open_entry()
                 open_location.assert_called_once_with("/org/events.org", 3)
+
+    def test_weekly_agenda_includes_all_seven_days_and_no_global_todos(self):
+        import datetime as dt
+        import org
+
+        tab = self.app.new_tab()
+        tab.present()
+        self.assertTrue(tab.window._on_key_pressed(
+            None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
+        self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_a, 0, Gdk.ModifierType(0)))
+        agenda = tab.window.weekly_agenda
+        self.assertIs(tab.window.active_view, agenda)
+        self.assertEqual(tab.window.get_title(), "Agenda – Organizer")
+        start = agenda.start
+        saturday = start + dt.timedelta(days=5)
+        text = (f"* TODO Scheduled task\nSCHEDULED: <{start.isoformat()} 09:00>\n"
+                f"* TODO Deadline task\nDEADLINE: <{start.isoformat()}>\n"
+                f"* Weekend event\n<{saturday.isoformat()} 12:00>\n"
+                "* TODO Undated task\n")
+        entries = org.parse_entries(text, "/org/test.org")
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/test.org"], entries)):
+            agenda.refresh()
+            self.assertEqual(sum(line.kind == "date" for line in agenda.lines), 7)
+            output = "\n".join(line.text for line in agenda.lines)
+            self.assertIn("Scheduled:", output)
+            self.assertIn("Deadline:", output)
+            self.assertIn("Weekend event", output)
+            self.assertNotIn("Undated task", output)
+            self.assertNotIn("Global list", output)
+            self.assertFalse(any(line.kind == "separator" for line in agenda.lines))
+            self.assertEqual(tab.window.tabs.get_n_pages(), 1)
+            item, button = next((item, button) for item, button in agenda.entry_buttons
+                                if item.entry.display_title == "Scheduled task")
+            with patch.object(self.app, "open_location") as open_location:
+                button.emit("clicked")
+                open_location.assert_called_once_with("/org/test.org", 0)
+            agenda.selected_item = item
+            agenda.shift(1)
+            self.assertEqual((agenda.start - start).days, 7)
+            agenda.goto_today()
+            self.assertEqual(agenda.start, start)
+        agenda.close()
+        self.assertIs(tab.window.active_view, tab)
+
+    def test_weekly_agenda_refreshes_unsaved_edits_without_opening_calendar(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tasks.org")
+            text = f"* TODO First\nSCHEDULED: <{dt.date.today().isoformat()} 09:00>\n"
+            with open(path, "w") as stream:
+                stream.write(text)
+            tab = self.app.open_file(Gio.File.new_for_path(path))
+            self.wait_for(lambda: bool(tab.get_text()))
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                self.app.show_weekly_agenda(tab.window)
+                agenda = tab.window.weekly_agenda
+                self.assertIsNone(tab.window.agenda)
+                self.assertEqual(len(agenda.entry_buttons), 1)
+                tab.buffer.set_text(text.replace("First", "Changed"))
+                self.wait_for(lambda: any(
+                    item.entry.display_title == "Changed" for item, _ in agenda.entry_buttons))
+                agenda._move(1)
+                agenda.cycle_todo()
+                self.assertIn("* DONE Changed", tab.get_text())
+                self.assertTrue(tab.buffer.get_modified())
+                self.assertIs(tab.window.active_view, agenda)
+                agenda._move(1)
+                agenda.edit_planning("DEADLINE")
+                self.assertIsNotNone(agenda._active_date_popover)
+                agenda._keyboard_quit()
+                self.wait_for(lambda: agenda._active_date_popover is None)
+
+    def test_weekly_agenda_colors_keywords_and_uses_compact_rows(self):
+        import datetime as dt
+        import org
+        from gi.repository import Pango
+
+        self.app.show_weekly_agenda()
+        window = self.app.editor_windows()[0]
+        agenda = window.weekly_agenda
+        date = dt.date.today().isoformat()
+        entries = org.parse_entries(
+            f"* TODO Café <{date}>\n* DONE Résumé <{date}>\n", "/org/test.org")
+        manager = Adw.StyleManager.get_default()
+        original_scheme = manager.get_color_scheme()
+        self.addCleanup(manager.set_color_scheme, original_scheme)
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/test.org"], entries)):
+            for mode in (Adw.ColorScheme.FORCE_LIGHT, Adw.ColorScheme.FORCE_DARK):
+                manager.set_color_scheme(mode)
+                agenda.refresh()
+                colors = {}
+                for item, button in agenda.entry_buttons:
+                    label = button.get_child()
+                    self.assertLessEqual(label.get_margin_top() + label.get_margin_bottom(), 2)
+                    attributes = label.get_attributes()
+                    iterator = attributes.get_iterator()
+                    index = len(label.get_text().split(item.entry.keyword)[0].encode("utf-8"))
+                    while iterator.range()[1] <= index:
+                        self.assertTrue(iterator.next())
+                    foreground = iterator.get(Pango.AttrType.FOREGROUND)
+                    color = foreground.as_color().color
+                    colors[item.entry.keyword] = (color.red, color.green, color.blue)
+                    if item.entry.keyword == "TODO":
+                        self.assertGreater(color.red, color.green)
+                    else:
+                        self.assertGreater(color.green, color.red)
+                    weight_attribute = iterator.get(Pango.AttrType.WEIGHT)
+                    weight = weight_attribute.as_int().value
+                    self.assertEqual(weight, Pango.Weight.BOLD)
+                self.assertNotEqual(colors["TODO"], colors["DONE"])
+
+    def test_weekly_agenda_font_size_matches_editor_at_shared_zoom_levels(self):
+        import datetime as dt
+        import org
+
+        tab = self.app.new_tab()
+        self.app.show_weekly_agenda(tab.window)
+        agenda = tab.window.weekly_agenda
+        entries = org.parse_entries(f"* Event <{dt.date.today().isoformat()}>\n")
+        display = Gdk.Display.get_default()
+        Gtk.StyleContext.remove_provider_for_display(display, self.app.zoom_css)
+        Gtk.StyleContext.add_provider_for_display(
+            display, self.app.zoom_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        original_zoom = self.app.zoom
+        self.addCleanup(self.app.set_zoom, original_zoom, False)
+        with patch.object(self.app, "agenda_entries", return_value=("/org", ["test.org"], entries)):
+            agenda.refresh()
+            label = agenda.entry_buttons[0][1].get_child()
+            heading = agenda.listbox.get_first_child().get_child()
+            sizes = []
+            for zoom in (100, 150, 70):
+                tab.present()
+                self.wait_for(tab.view.get_mapped)
+                self.app.set_zoom(zoom, notify=False)
+                if sizes:
+                    self.wait_for(lambda: tab.view.get_pango_context().get_font_description().get_size()
+                                  != sizes[-1])
+                editor_size = tab.view.get_pango_context().get_font_description().get_size()
+                agenda.present()
+                label = agenda.entry_buttons[0][1].get_child()
+                heading = agenda.listbox.get_first_child().get_child()
+                if sizes:
+                    self.wait_for(lambda: label.get_pango_context().get_font_description().get_size()
+                                  != sizes[-1])
+                self.wait_for(lambda: label.get_pango_context().get_font_description().get_size()
+                              == editor_size)
+                self.assertEqual(heading.get_pango_context().get_font_description().get_size(),
+                                 editor_size)
+                sizes.append(editor_size)
+            self.assertGreater(sizes[1], sizes[0])
+            self.assertLess(sizes[2], sizes[0])
+
+    def test_zoom_notification_targets_active_view_and_reuses_toast(self):
+        tab = self.app.new_tab()
+        tab.present()
+        self.app.show_weekly_agenda(tab.window)
+        agenda = tab.window.weekly_agenda
+        self.wait_for(lambda: self.app.get_active_window() is tab.window)
+        original_zoom = self.app.zoom
+        self.addCleanup(self.app.set_zoom, original_zoom, False)
+        self.app.set_zoom(100, notify=False)
+        self.app.set_zoom(110)
+        toast = agenda._zoom_toast
+        self.assertIsNotNone(toast)
+        self.assertEqual(toast.get_title(), "Zoom 110%")
+        self.app.set_zoom(120)
+        self.assertIs(agenda._zoom_toast, toast)
+        self.assertEqual(toast.get_title(), "Zoom 120%")
+        self.assertIsNone(tab._zoom_toast)
+        toast.dismiss()
+        self.assertIsNone(agenda._zoom_toast)
+        self.app.set_zoom(130, notify=False)
+        self.assertIsNone(agenda._zoom_toast)
+        tab.present()
+        self.app.set_zoom(140)
+        self.assertEqual(tab._zoom_toast.get_title(), "Zoom 140%")
+        self.assertIsNone(agenda._zoom_toast)
 
     def test_session_restores_file_tabs_in_order_without_duplicates(self):
         with tempfile.TemporaryDirectory() as directory:

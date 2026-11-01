@@ -11,7 +11,7 @@ from keybindings import Gdk, OrgKeySequences  # noqa: E402
 class KeySequenceTests(unittest.TestCase):
     def setUp(self):
         self.commands = {key: Mock() for key in (
-            "C-c C-t", "C-c C-c", "C-c C-s", "C-c C-d", "C-c c", "C-c f", "C-c period",
+            "C-c C-t", "C-c C-c", "C-c C-s", "C-c C-d", "C-c c", "C-c a", "C-c f", "C-c period",
             "C-x C-c", "C-x C-f", "C-x C-s", "C-x b", "C-g")}
         self.handler = OrgKeySequences(Mock(), self.commands)
         self.addCleanup(self.handler._cancel)

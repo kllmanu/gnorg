@@ -12,7 +12,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
-from agenda import AgendaView  # noqa: E402
+from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgIndent  # noqa: E402
@@ -93,6 +93,7 @@ class EditorTab(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": app.show_agenda,
+            "C-c a": app.show_weekly_agenda,
             "C-c f": self.window.show_files,
             "C-c period": self.insert_timestamp,
             "C-x C-c": lambda: app.activate_action("quit", None),
@@ -298,19 +299,7 @@ class EditorTab(Adw.Bin):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=2))
 
     def show_zoom(self, zoom):
-        # Reuse one toast so rapid zoom changes update it instantly instead of queueing.
-        title = f"Zoom {zoom}%"
-        if self._zoom_toast is None:
-            self._zoom_toast = Adw.Toast(title=title, timeout=1, priority=Adw.ToastPriority.HIGH)
-            self._zoom_toast.connect("dismissed", self._on_zoom_toast_dismissed)
-        else:
-            self._zoom_toast.set_title(title)
-        # Re-adding a shown toast resets its timeout
-        self.toasts.add_toast(self._zoom_toast)
-
-    def _on_zoom_toast_dismissed(self, toast):
-        if self._zoom_toast is toast:
-            self._zoom_toast = None
+        show_zoom_toast(self, zoom)
 
     @property
     def is_pristine(self):
@@ -745,6 +734,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self._force_close = False
         self._closed_tabs = []
         self.agenda = None
+        self.weekly_agenda = None
         self.tabs = Adw.TabView()
         bar = Adw.TabBar(view=self.tabs, autohide=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -756,6 +746,9 @@ class EditorWindow(Adw.ApplicationWindow):
         self.agenda_container = Adw.Bin()
         self.stack.add_titled_with_icon(
             self.agenda_container, "agenda", "Calendar", "x-office-calendar-symbolic")
+        self.weekly_agenda_container = Adw.Bin()
+        self.stack.add_titled_with_icon(
+            self.weekly_agenda_container, "weekly-agenda", "Agenda", "view-list-symbolic")
         self.view_switcher = Adw.ViewSwitcherTitle(stack=self.stack, title=APP_NAME)
         self.switcher_bar = Adw.ViewSwitcherBar(stack=self.stack)
         self.view_switcher.bind_property(
@@ -796,6 +789,8 @@ class EditorWindow(Adw.ApplicationWindow):
     def active_view(self):
         if self.stack.get_visible_child_name() == "agenda":
             return self.agenda
+        if self.stack.get_visible_child_name() == "weekly-agenda":
+            return self.weekly_agenda
         return self.active_tab
 
     def show_files(self):
@@ -833,6 +828,8 @@ class EditorWindow(Adw.ApplicationWindow):
     def _on_view_changed(self, *_):
         if self.stack.get_visible_child_name() == "agenda":
             self.get_application().show_agenda(self)
+        elif self.stack.get_visible_child_name() == "weekly-agenda":
+            self.get_application().show_weekly_agenda(self)
         elif self.stack.get_visible_child_name() == "files" and self.active_tab is None:
             self.new_tab()
         self._on_selected()
@@ -931,6 +928,7 @@ class OrganizerApplication(Adw.Application):
             ("about", self._on_about),
             ("quit", self._on_quit),
             ("agenda", lambda *_: self.show_agenda()),
+            ("weekly-agenda", lambda *_: self.show_weekly_agenda()),
             ("preferences", lambda *_: self.show_preferences()),
             ("zoom-in", lambda *_: self.set_zoom(self.zoom + ZOOM_STEP)),
             ("zoom-out", lambda *_: self.set_zoom(self.zoom - ZOOM_STEP)),
@@ -1100,8 +1098,21 @@ class OrganizerApplication(Adw.Application):
         if self.agenda is agenda:
             self.agenda = None
 
+    def show_weekly_agenda(self, window=None):
+        if window is None:
+            active = self.get_active_window()
+            windows = self.editor_windows()
+            window = (active if isinstance(active, EditorWindow)
+                      else windows[0] if windows else self.new_window())
+        if window.weekly_agenda is None:
+            window.weekly_agenda = AgendaView(window, weekly=True)
+            window.weekly_agenda_container.set_child(window.weekly_agenda)
+        window.weekly_agenda.refresh()
+        window.weekly_agenda.present()
+
     def queue_agenda_refresh(self):
-        if not any(window.agenda for window in self.editor_windows()) or self._agenda_refresh_id:
+        if (not any(window.agenda or window.weekly_agenda for window in self.editor_windows())
+                or self._agenda_refresh_id):
             return
 
         def refresh():
@@ -1109,6 +1120,8 @@ class OrganizerApplication(Adw.Application):
             for window in self.editor_windows():
                 if window.agenda is not None:
                     window.agenda.refresh()
+                if window.weekly_agenda is not None:
+                    window.weekly_agenda.refresh()
             return False
 
         self._agenda_refresh_id = GLib.timeout_add(300, refresh)
@@ -1142,7 +1155,7 @@ class OrganizerApplication(Adw.Application):
         group = Adw.PreferencesGroup(
             title="Calendar",
             description="Active timestamps in these .org files appear in the calendar. "
-                        "Scheduled entries and deadlines are excluded.")
+                        "Agenda also includes scheduled entries and deadlines.")
         row = Adw.ActionRow(title="Calendar Folder", subtitle=short_path(self.agenda_directory()))
         choose = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
                             tooltip_text="Choose Folder", css_classes=["flat"])
@@ -1173,6 +1186,8 @@ class OrganizerApplication(Adw.Application):
             for window in self.editor_windows():
                 if window.agenda is not None:
                     window.agenda.refresh(keep_scroll=False)
+                if window.weekly_agenda is not None:
+                    window.weekly_agenda.refresh(keep_scroll=False)
 
         def on_choose(_button):
             file_dialog = Gtk.FileDialog(title="Choose Calendar Folder")
@@ -1250,7 +1265,7 @@ class OrganizerApplication(Adw.Application):
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
-            f'textview.organizer-editor, .organizer-agenda {{ font-family: "Iosevka", monospace; '
+            f'textview.organizer-editor, .organizer-agenda label {{ font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
         for window in self.editor_tabs():
             window.org_indent.queue_refresh()
@@ -1259,7 +1274,8 @@ class OrganizerApplication(Adw.Application):
         if self.settings and self.settings.get_int("zoom") != zoom:
             self.settings.set_int("zoom", zoom)
         win = self.get_active_window()
-        if notify and isinstance(win, EditorWindow) and isinstance(win.active_view, EditorTab):
+        if (notify and isinstance(win, EditorWindow)
+                and isinstance(win.active_view, (EditorTab, AgendaView))):
             win.active_view.show_zoom(zoom)
 
     def _on_quit(self, *_):

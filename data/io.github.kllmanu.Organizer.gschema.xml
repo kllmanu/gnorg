@@ -44,7 +44,7 @@
     <key name="agenda-directory" type="s">
       <default>'~/org'</default>
       <summary>Calendar folder</summary>
-      <description>Folder whose .org files (including subfolders) provide active timestamps for the calendar. Scheduled entries and deadlines are excluded. A leading ~ is expanded to the home folder.</description>
+      <description>Folder whose .org files (including subfolders) provide active timestamps for Calendar and dated entries for the seven-day Agenda list. Calendar excludes scheduled entries and deadlines; Agenda includes them without a global TODO list. A leading ~ is expanded to the home folder.</description>
     </key>
     <key name="hide-weekends" type="b">
       <default>true</default>

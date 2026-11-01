@@ -8,11 +8,28 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+gi.require_version("GtkSource", "5")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
+
+
+def show_zoom_toast(view, zoom):
+    title = f"Zoom {zoom}%"
+    if view._zoom_toast is None:
+        toast = Adw.Toast(title=title, timeout=1, priority=Adw.ToastPriority.HIGH)
+        view._zoom_toast = toast
+
+        def dismissed(_toast):
+            if view._zoom_toast is toast:
+                view._zoom_toast = None
+
+        toast.connect("dismissed", dismissed)
+    else:
+        view._zoom_toast.set_title(title)
+    view.toasts.add_toast(view._zoom_toast)
 
 
 def event_minutes(item):
@@ -53,20 +70,24 @@ def event_lanes(items):
 
 
 class AgendaView(Adw.Bin):
-    def __init__(self, window):
+    def __init__(self, window, weekly=False):
         super().__init__()
         self.window = window
         self.app = window.get_application()
+        self.weekly = weekly
+        self.name = "Agenda" if weekly else "Calendar"
+        self.stack_name = "weekly-agenda" if weekly else "agenda"
         self.start = org.week_start(dt.date.today())
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
         self._active_date_popover = None
         self._folder_message = None
+        self._zoom_toast = None
         self.actions = Gio.SimpleActionGroup()
         self.insert_action_group("win", self.actions)
 
-        self.title_widget = Adw.WindowTitle(title="Calendar")
+        self.title_widget = Adw.WindowTitle(title=self.name)
         self.header = Adw.HeaderBar(title_widget=self.title_widget)
         self.open_button = Gtk.Button(tooltip_text="Open documents")
         open_content = Gtk.Box(spacing=6)
@@ -123,6 +144,13 @@ class AgendaView(Adw.Bin):
         self.scroller = Gtk.ScrolledWindow(child=time_row, vexpand=True,
                                            hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.view.append(self.scroller)
+        if weekly:
+            self.view.remove(header_row)
+            self.view.remove(self.scroller)
+            self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
+                                       css_classes=["organizer-agenda"])
+            self.scroller = Gtk.ScrolledWindow(child=self.listbox, vexpand=True)
+            self.view.append(self.scroller)
         scroller = self.scroller
         self.app.setup_scroll_zoom(scroller)
         css = Gtk.CssProvider()
@@ -135,6 +163,8 @@ class AgendaView(Adw.Bin):
             .calendar-event.deadline { background: alpha(@error_color, 0.15);
                 border-left-color: @error_color; }
             .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
+            .organizer-agenda > row { padding: 0; }
+            .organizer-agenda button { padding: 0; min-height: 0; }
         """)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -157,6 +187,7 @@ class AgendaView(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": self.app.show_agenda,
+            "C-c a": self.app.show_weekly_agenda,
             "C-c f": self.window.show_files,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
@@ -165,7 +196,12 @@ class AgendaView(Adw.Bin):
         })
         self.remove_controller(self._org_key_sequences.controller)
         self.refresh()
-        GLib.idle_add(self._scroll_morning)
+        if weekly:
+            style_manager = Adw.StyleManager.get_default()
+            dark_handler = style_manager.connect("notify::dark", lambda *_: self.refresh())
+            self.connect("destroy", lambda *_: style_manager.disconnect(dark_handler))
+        if not weekly:
+            GLib.idle_add(self._scroll_morning)
 
     def _scroll_morning(self):
         self.scroller.get_vadjustment().set_value(8 * 60)
@@ -175,7 +211,7 @@ class AgendaView(Adw.Bin):
         return self.app
 
     def present(self):
-        self.window.stack.set_visible_child_name("agenda")
+        self.window.stack.set_visible_child_name(self.stack_name)
         self.window.present()
         self.view.grab_focus()
 
@@ -183,10 +219,13 @@ class AgendaView(Adw.Bin):
         self.window.show_files()
 
     def _update_title(self):
-        self.window.set_title("Calendar – Organizer")
+        self.window.set_title(f"{self.name} – Organizer")
 
     def toast(self, message):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=4))
+
+    def show_zoom(self, zoom):
+        show_zoom_toast(self, zoom)
 
     def refresh(self, keep_scroll=True):
         if self._active_date_popover is not None:
@@ -195,10 +234,10 @@ class AgendaView(Adw.Bin):
         today = dt.date.today()
         self.today_button.set_sensitive(self.start != org.week_start(today))
         self.days = {
-            date: [item for item in items if item.kind == "timestamp"]
+            date: [item for item in items if self.weekly or item.kind == "timestamp"]
             for date, items in org.build_agenda(entries, self.start, 7, today).items()}
         visible_days = [(date, items) for date, items in self.days.items()
-                        if not self.app.hide_weekends or date.weekday() < 5]
+                        if self.weekly or not self.app.hide_weekends or date.weekday() < 5]
         end = visible_days[-1][0]
         self.week_label.set_label(
             f"{org.format_date(self.start, with_year=True)} – "
@@ -211,6 +250,9 @@ class AgendaView(Adw.Bin):
         if folder_message and folder_message != self._folder_message:
             self.toast(folder_message)
         self._folder_message = folder_message
+        if self.weekly:
+            self._refresh_weekly(entries, today)
+            return
         focus = self.window.get_focus()
         restore_focus = focus is not None and focus.is_ancestor(self.view)
         selected = self.selected_item
@@ -266,6 +308,72 @@ class AgendaView(Adw.Bin):
             fixed.add_tick_callback(self._layout_events, blocks)
         if restore_focus:
             (selected_button or self.view).grab_focus()
+
+    def _refresh_weekly(self, entries, today):
+        selected = self.selected_item
+        focus = self.window.get_focus()
+        restore_focus = focus is not None and focus.is_ancestor(self.view)
+        self.listbox.remove_all()
+        self.entry_buttons = []
+        self.selected_item = None
+        selected_button = None
+        items = iter(item for day in self.days.values() for item in day)
+        self.lines = org.format_agenda(entries, self.start, 7, today, with_todos=False)
+        for line in self.lines:
+            label = Gtk.Label(label=line.text, xalign=0, selectable=False,
+                              css_classes=["monospace"], margin_start=12, margin_end=12,
+                              margin_top=1, margin_bottom=1)
+            label.set_attributes(self._line_attributes(line))
+            if line.kind == "item":
+                item = next(items)
+                button = Gtk.Button(child=label, css_classes=["flat"])
+                button.connect("clicked", lambda _button, event=item: self._open_item(event))
+                button.connect("notify::has-focus", lambda widget, *_args, event=item:
+                               self._select(event) if widget.has_focus() else None)
+                self.listbox.append(button)
+                self.entry_buttons.append((item, button))
+                if item == selected:
+                    self.selected_item = item
+                    selected_button = button
+            else:
+                row = Gtk.ListBoxRow(child=label, activatable=False, selectable=False)
+                self.listbox.append(row)
+        if restore_focus:
+            (selected_button or self.view).grab_focus()
+
+    def _line_attributes(self, line):
+        dark = Adw.StyleManager.get_default().get_dark()
+        scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(
+            "organizer-dark" if dark else "organizer")
+        attributes = Pango.AttrList()
+        if scheme is None:
+            return attributes
+        # Dim completed titles before applying the keyword's own green style.
+        spans = sorted(line.spans, key=lambda span: span[2] != "agenda-done")
+        for start, end, name in spans:
+            style = scheme.get_style(f"org:{name}")
+            if style is None:
+                continue
+            values = []
+            if style.props.foreground_set:
+                color = Gdk.RGBA()
+                if color.parse(style.props.foreground):
+                    values.append(Pango.attr_foreground_new(
+                        round(color.red * 65535), round(color.green * 65535),
+                        round(color.blue * 65535)))
+            if style.props.bold_set:
+                values.append(Pango.attr_weight_new(
+                    Pango.Weight.BOLD if style.props.bold else Pango.Weight.NORMAL))
+            if style.props.italic_set:
+                values.append(Pango.attr_style_new(
+                    Pango.Style.ITALIC if style.props.italic else Pango.Style.NORMAL))
+            if style.props.underline_set:
+                values.append(Pango.attr_underline_new(style.props.pango_underline))
+            for value in values:
+                value.start_index = len(line.text[:start].encode("utf-8"))
+                value.end_index = len(line.text[:end].encode("utf-8"))
+                attributes.change(value)
+        return attributes
 
     def _entry_button(self, item):
         entry = item.entry
