@@ -88,6 +88,7 @@ class EditorWindow(Adw.ApplicationWindow):
             "C-c a": app.show_agenda,
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
+            "C-x C-s": self.save,
             "C-g": self._keyboard_quit,
             "M-Return": self.insert_item,
         })

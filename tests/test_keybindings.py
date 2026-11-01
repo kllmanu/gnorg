@@ -12,7 +12,7 @@ class KeySequenceTests(unittest.TestCase):
     def setUp(self):
         self.commands = {key: Mock() for key in (
             "C-c C-t", "C-c C-c", "C-c C-s", "C-c C-d", "C-c a",
-            "C-x C-c", "C-x C-f", "C-g")}
+            "C-x C-c", "C-x C-f", "C-x C-s", "C-g")}
         self.handler = OrgKeySequences(Mock(), self.commands)
         self.addCleanup(self.handler._cancel)
 
