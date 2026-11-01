@@ -14,6 +14,13 @@ TODAY = D(2026, 10, 31)  # a Saturday
 
 
 class NewItemTests(unittest.TestCase):
+    def test_indent_layout(self):
+        lines = ["preamble", "* Heading", "body", "** Child", "- item",
+                 "#+BEGIN_SRC", "* not a heading", "#+END_SRC", "body", "* Next"]
+        self.assertEqual(list(org.indent_layout(lines)), [
+            (0, 0), (0, 0), (2, 0), (2, 1), (4, 0),
+            (4, 0), (4, 0), (4, 0), (4, 0), (0, 0)])
+
     def test_toggle_checkbox(self):
         for line, expected in (
             ("- [ ] task", "- [X] task"),

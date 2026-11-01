@@ -15,6 +15,7 @@ import org  # noqa: E402
 from agenda import AgendaWindow  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
+from indent import OrgIndent  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
 APP_NAME = "Organizer"
@@ -93,6 +94,7 @@ class EditorWindow(Adw.ApplicationWindow):
             "M-Return": self.insert_item,
         })
         self._setup_style()
+        self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
 
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())
@@ -632,12 +634,15 @@ class OrganizerApplication(Adw.Application):
         self.settings = None
         self.agenda = None
         self._agenda_refresh_id = 0
+        self.org_indent_enabled = True
 
     def do_startup(self):
         Adw.Application.do_startup(self)
         GLib.set_application_name(APP_NAME)
 
         self.settings = self._load_settings()
+        if self.settings:
+            self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
 
         language_specs = data_path("language-specs")
         if language_specs:
@@ -798,6 +803,14 @@ class OrganizerApplication(Adw.Application):
     def show_preferences(self):
         dialog = Adw.PreferencesDialog(title="Preferences")
         page = Adw.PreferencesPage()
+        editor_group = Adw.PreferencesGroup(title="Editor")
+        indent_row = Adw.SwitchRow(
+            title="Org Indent Mode",
+            subtitle="Visually indent sections and hide extra heading stars without changing the file.",
+            active=self.org_indent_enabled)
+        indent_row.connect("notify::active", lambda row, *_: self.set_org_indent(row.get_active()))
+        editor_group.add(indent_row)
+        page.add(editor_group)
         group = Adw.PreferencesGroup(
             title="Agenda",
             description="All .org files in this folder and its subfolders appear in the agenda.")
@@ -833,6 +846,13 @@ class OrganizerApplication(Adw.Application):
         choose.connect("clicked", on_choose)
         dialog.present(self.get_active_window())
 
+    def set_org_indent(self, enabled):
+        self.org_indent_enabled = enabled
+        if self.settings:
+            self.settings.set_boolean("org-indent-mode", enabled)
+        for window in self.editor_windows():
+            window.org_indent.set_enabled(enabled)
+
     def _on_about(self, *_):
         about = Adw.AboutDialog(
             application_name=APP_NAME,
@@ -867,6 +887,8 @@ class OrganizerApplication(Adw.Application):
         self.zoom_css.load_from_string(
             f'textview.organizer-editor {{ font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
+        for window in self.editor_windows():
+            window.org_indent.queue_refresh()
         self.lookup_action("zoom-out").set_enabled(zoom > ZOOM_MIN)
         self.lookup_action("zoom-in").set_enabled(zoom < ZOOM_MAX)
         if self.settings and self.settings.get_int("zoom") != zoom:

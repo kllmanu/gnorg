@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
+    <key name="org-indent-mode" type="b">
+      <default>true</default>
+      <summary>Org indent mode</summary>
+      <description>Visually indent sections by heading depth and hide extra heading stars without modifying file contents.</description>
+    </key>
     <key name="zoom" type="i">
       <range min="30" max="400"/>
       <default>100</default>

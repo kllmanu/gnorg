@@ -34,6 +34,24 @@ DRAWER_END_RE = re.compile(r"^[ \t]*:END:[ \t]*$", re.IGNORECASE)
 BLOCK_START_RE = re.compile(r"^[ \t]*#\+BEGIN_", re.IGNORECASE)
 BLOCK_END_RE = re.compile(r"^[ \t]*#\+END_", re.IGNORECASE)
 
+def indent_layout(lines):
+    """Yield (visual indent columns, hidden heading stars) without changing text."""
+    depth = 0
+    in_block = False
+    for line in lines:
+        if in_block:
+            in_block = not BLOCK_END_RE.match(line)
+            yield depth * 2, 0
+        elif BLOCK_START_RE.match(line):
+            in_block = True
+            yield depth * 2, 0
+        elif heading := HEADING_RE.match(line):
+            depth = len(heading[1])
+            yield (depth - 1) * 2, depth - 1
+        else:
+            yield depth * 2, 0
+
+
 def new_item_prefix(line):
     """Return the prefix for a new heading or list item below this line."""
     heading = HEADING_RE.match(line)
