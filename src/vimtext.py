@@ -16,6 +16,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, GtkSource
 import org  # noqa: E402
 from agenda import AgendaWindow  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
+from keybindings import OrgKeySequences  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Vimtext"
 APP_NAME = "Vimtext"
@@ -80,6 +81,12 @@ class EditorWindow(Adw.ApplicationWindow):
         self._build_ui()
         self._setup_vim()
         self._setup_actions()
+        self._org_key_sequences = OrgKeySequences(self, {
+            "C-t": self.cycle_todo,
+            "C-s": lambda: self.edit_planning("SCHEDULED"),
+            "C-d": lambda: self.edit_planning("DEADLINE"),
+            "a": lambda: self.get_application().show_agenda(),
+        })
         self._setup_style()
 
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
@@ -122,7 +129,7 @@ class EditorWindow(Adw.ApplicationWindow):
         header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
                                      tooltip_text="New Window (Ctrl+N)", action_name="win.new"))
         header.pack_start(Gtk.Button(icon_name="x-office-calendar-symbolic",
-                                     tooltip_text="Agenda (Ctrl+Shift+A)", action_name="app.agenda"))
+                                     tooltip_text="Agenda (C-c a)", action_name="app.agenda"))
 
         menu = Gio.Menu()
         file_section = Gio.Menu()
@@ -648,10 +655,6 @@ class VimtextApplication(Adw.Application):
         self.set_accels_for_action("win.save", ["<Ctrl>s"])
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
         self.set_accels_for_action("window.close", ["<Ctrl>w"])
-        self.set_accels_for_action("win.todo", ["<Ctrl><Shift>t"])
-        self.set_accels_for_action("win.schedule", ["<Ctrl><Shift>e"])
-        self.set_accels_for_action("win.deadline", ["<Ctrl><Shift>d"])
-        self.set_accels_for_action("app.agenda", ["<Ctrl><Shift>a"])
         self.set_accels_for_action("app.preferences", ["<Ctrl>comma"])
         self.set_accels_for_action("app.shortcuts", ["<Ctrl>question"])
 
@@ -813,10 +816,10 @@ class VimtextApplication(Adw.Application):
     def show_shortcuts(self):
         dialog = Adw.ShortcutsDialog()
         for title, items in (
-            ("Org", (("Cycle TODO state", "<Ctrl><Shift>t"),
-                     ("Schedule", "<Ctrl><Shift>e"),
-                     ("Set deadline", "<Ctrl><Shift>d"),
-                     ("Open agenda", "<Ctrl><Shift>a"))),
+            ("Org", (("Cycle TODO state (C-c C-t)", "<Ctrl>c"),
+                     ("Schedule (C-c C-s)", "<Ctrl>c"),
+                     ("Set deadline (C-c C-d)", "<Ctrl>c"),
+                     ("Open agenda (C-c a)", "<Ctrl>c"))),
             ("Agenda", (("Open entry", "Return"),
                         ("Cycle TODO state", "t"),
                         ("Next / previous line", "n p"),

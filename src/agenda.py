@@ -13,6 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, GtkSource, Pango  
 
 import org  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
+from keybindings import OrgKeySequences  # noqa: E402
 
 STYLES = ("agenda-structure", "agenda-date", "agenda-date-weekend", "agenda-date-today",
           "agenda-separator", "agenda-done", "scheduled", "scheduled-previously", "deadline",
@@ -55,6 +56,12 @@ class AgendaWindow(Adw.ApplicationWindow):
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._on_key_pressed)
         self.view.add_controller(keys)
+        self._org_key_sequences = OrgKeySequences(self, {
+            "C-t": self.cycle_todo,
+            "C-s": lambda: self.edit_planning("SCHEDULED"),
+            "C-d": lambda: self.edit_planning("DEADLINE"),
+            "a": self.app.show_agenda,
+        })
         clicks = Gtk.GestureClick()
         clicks.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.open_entry())
         self.view.add_controller(clicks)

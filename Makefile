@@ -14,7 +14,7 @@ data/gschemas.compiled: data/io.github.kllmanu.Vimtext.gschema.xml
 	glib-compile-schemas --strict data
 
 install:
-	install -Dm644 -t $(APP_DIR) src/org.py src/agenda.py src/datepicker.py
+	install -Dm644 -t $(APP_DIR) src/org.py src/agenda.py src/datepicker.py src/keybindings.py
 	install -Dm755 src/vimtext.py $(APP_DIR)/vimtext.py
 	install -Dm644 -t $(APP_DIR)/language-specs data/language-specs/*.lang
 	install -Dm644 -t $(APP_DIR)/styles data/styles/*.xml
