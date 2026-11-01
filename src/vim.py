@@ -16,6 +16,7 @@ from agenda import AgendaWindow  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgIndent  # noqa: E402
+from bufferpicker import BufferPicker  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
 APP_NAME = "Organizer"
@@ -95,6 +96,7 @@ class EditorTab(Adw.Bin):
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
             "C-x C-s": self.save,
+            "C-x b": app.show_buffers,
             "C-g": self._keyboard_quit,
             "M-Return": self.insert_item,
         })
@@ -136,10 +138,15 @@ class EditorTab(Adw.Bin):
         header = Adw.HeaderBar(title_widget=self.title_widget)
         self.header = header
 
-        header.pack_start(Gtk.Button(icon_name="document-open-symbolic",
-                                     tooltip_text="Open (Ctrl+O)", action_name="win.open"))
+        self.open_button = Gtk.Button(label="Open", tooltip_text="Open documents")
+        open_content = Gtk.Box(spacing=6)
+        open_content.append(Gtk.Label(label="Open"))
+        open_content.append(Gtk.Image(icon_name="pan-down-symbolic"))
+        self.open_button.set_child(open_content)
+        self.open_button.connect("clicked", lambda *_: self.get_application().show_buffers())
+        header.pack_start(self.open_button)
         header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                     tooltip_text="New Tab (Ctrl+N)", action_name="win.new"))
+                                     tooltip_text="New Tab (Ctrl+T)", action_name="win.new"))
         header.pack_start(Gtk.Button(icon_name="x-office-calendar-symbolic",
                                      tooltip_text="Agenda (C-c a)", action_name="app.agenda"))
 
@@ -231,6 +238,7 @@ class EditorTab(Adw.Bin):
             self.actions.add_action(action)
 
         add("new", lambda: self.window.new_tab().present())
+        add("reopen", self.window.reopen_tab)
         add("close", self.close)
         add("open", self.open_dialog)
         add("save", self.save)
@@ -664,6 +672,7 @@ class EditorWindow(Adw.ApplicationWindow):
                 self.maximize()
         self._closing = False
         self._force_close = False
+        self._closed_tabs = []
         self.tabs = Adw.TabView()
         bar = Adw.TabBar(view=self.tabs, autohide=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -692,6 +701,19 @@ class EditorWindow(Adw.ApplicationWindow):
         tab._update_title()
         return tab
 
+    def reopen_tab(self):
+        if not self._closed_tabs:
+            return
+        file, text, modified, offset = self._closed_tabs.pop()
+        tab = self.new_tab()
+        if file is not None:
+            tab._set_file(file, text)
+        else:
+            tab.buffer.set_text(text)
+        tab.buffer.set_modified(modified)
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(offset))
+        tab.present()
+
     def _on_selected(self, *_):
         tab = self.active_tab
         if tab is None:
@@ -708,6 +730,11 @@ class EditorWindow(Adw.ApplicationWindow):
 
     def _on_close_page(self, _tabs, page):
         def finish(confirmed):
+            if confirmed:
+                tab = page.get_child()
+                offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
+                self._closed_tabs.append(
+                    (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
             self.tabs.close_page_finish(page, confirmed)
             if not self.tabs.get_n_pages() and not self._closing:
                 self._force_close = True
@@ -774,7 +801,8 @@ class OrganizerApplication(Adw.Application):
         self.set_zoom(self.settings.get_int("zoom") if self.settings else 100, notify=False)
 
         self.set_accels_for_action("app.quit", ["<Ctrl>q"])
-        self.set_accels_for_action("win.new", ["<Ctrl>n"])
+        self.set_accels_for_action("win.new", ["<Ctrl>t"])
+        self.set_accels_for_action("win.reopen", ["<Ctrl><Shift>t"])
         self.set_accels_for_action("win.open", ["<Ctrl>o"])
         self.set_accels_for_action("win.save", ["<Ctrl>s"])
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
@@ -926,6 +954,11 @@ class OrganizerApplication(Adw.Application):
         self._agenda_refresh_id = GLib.timeout_add(300, refresh)
 
     # ---------- Dialogs ----------
+
+    def show_buffers(self):
+        window = self.get_active_window()
+        current = window.active_tab if isinstance(window, EditorWindow) else None
+        BufferPicker(self.editor_tabs(), current).present(window)
 
     def show_preferences(self):
         dialog = Adw.PreferencesDialog(title="Preferences")

@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
 from vim import Gdk, Gio, GLib, Gtk, OrganizerApplication, ZOOM_MAX, ZOOM_MIN  # noqa: E402
+from bufferpicker import BufferPicker, matches_buffer  # noqa: E402
 
 
 @unittest.skipUnless(Gtk.init_check(), "GTK display required")
@@ -48,6 +49,22 @@ class TabTests(unittest.TestCase):
         self.assertEqual(len(self.app.editor_tabs()), 2)
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
+
+    def test_reopen_closed_tab_restores_text_and_cursor(self):
+        self.app.new_tab()
+        tab = self.app.new_tab()
+        tab.file = Gio.File.new_for_path("/org/test.org")
+        tab.buffer.set_text("* Saved heading")
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_offset(5))
+        window = tab.window
+        tab.close()
+        window.lookup_action("reopen").activate(None)
+        restored = window.active_tab
+        self.assertEqual(restored.path, "/org/test.org")
+        self.assertEqual(restored.get_text(), "* Saved heading")
+        self.assertFalse(restored.buffer.get_modified())
+        self.assertEqual(restored.buffer.get_iter_at_mark(restored.buffer.get_insert()).get_offset(), 5)
 
     def test_open_files_and_reuse_existing_tab(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -170,3 +187,35 @@ class TabTests(unittest.TestCase):
         controller.get_current_event_state.return_value = Gdk.ModifierType(0)
         self.assertFalse(self.app._on_zoom_scroll(controller, 0, -1))
         self.assertEqual(self.app.zoom, 100)
+
+    def test_buffer_completion_matches_terms_in_any_order(self):
+        self.assertTrue(matches_buffer("WORK test", "test.org", "/org/work/test.org"))
+        self.assertTrue(matches_buffer("test work", "test.org", "/org/work/test.org"))
+        self.assertFalse(matches_buffer("work absent", "test.org", "/org/work/test.org"))
+
+    def test_buffer_picker_switch_and_cancel(self):
+        first = self.app.new_tab()
+        first.file = Gio.File.new_for_path("/org/work/test.org")
+        second = self.app.new_tab()
+        second.file = Gio.File.new_for_path("/org/home/notes.org")
+        second.present()
+        picker = BufferPicker(self.app.editor_tabs(), second)
+        picker.present(second.window)
+        self.assertEqual(picker.listbox.get_selected_row().get_index(), 0)
+        picker._on_key_pressed(None, Gdk.KEY_Down, 0, Gdk.ModifierType(0))
+        self.assertEqual(picker.listbox.get_selected_row().get_index(), 1)
+        picker._on_key_pressed(None, Gdk.KEY_Up, 0, Gdk.ModifierType(0))
+        self.assertEqual(picker.listbox.get_selected_row().get_index(), 0)
+        picker.search.set_text("missing")
+        self.assertEqual(picker.results, [])
+        self.assertTrue(picker.empty.get_visible())
+        picker._on_key_pressed(None, Gdk.KEY_Return, 0, Gdk.ModifierType(0))
+        self.assertIs(second.window.active_tab, second)
+        picker.search.set_text("test work")
+        self.assertEqual(picker.results, [first])
+        picker._on_key_pressed(None, Gdk.KEY_Return, 0, Gdk.ModifierType(0))
+        self.assertIs(first.window.active_tab, first)
+        picker = BufferPicker(self.app.editor_tabs(), first)
+        picker.present(first.window)
+        picker._on_key_pressed(None, Gdk.KEY_g, 0, Gdk.ModifierType.CONTROL_MASK)
+        self.assertIs(first.window.active_tab, first)

@@ -65,6 +65,7 @@ class AgendaWindow(Adw.ApplicationWindow):
             "C-c a": self.app.show_agenda,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
+            "C-x b": self.app.show_buffers,
             "C-g": self._keyboard_quit,
         })
         clicks = Gtk.GestureClick()
