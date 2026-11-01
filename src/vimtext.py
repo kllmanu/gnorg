@@ -141,7 +141,6 @@ class EditorWindow(Adw.ApplicationWindow):
         menu.append_section(None, view_section)
         app_section = Gio.Menu()
         app_section.append("Preferences", "app.preferences")
-        app_section.append("Keyboard Shortcuts", "app.shortcuts")
         app_section.append(f"About {APP_NAME}", "app.about")
         menu.append_section(None, app_section)
 
@@ -625,7 +624,6 @@ class VimtextApplication(Adw.Application):
             ("quit", self._on_quit),
             ("agenda", lambda *_: self.show_agenda()),
             ("preferences", lambda *_: self.show_preferences()),
-            ("shortcuts", lambda *_: self.show_shortcuts()),
             ("zoom-in", lambda *_: self.set_zoom(self.zoom + ZOOM_STEP)),
             ("zoom-out", lambda *_: self.set_zoom(self.zoom - ZOOM_STEP)),
             ("zoom-reset", lambda *_: self.set_zoom(100)),
@@ -646,7 +644,6 @@ class VimtextApplication(Adw.Application):
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
         self.set_accels_for_action("window.close", ["<Ctrl>w"])
         self.set_accels_for_action("app.preferences", ["<Ctrl>comma"])
-        self.set_accels_for_action("app.shortcuts", ["<Ctrl>question"])
 
     def do_activate(self):
         self.new_window().present()
@@ -801,39 +798,6 @@ class VimtextApplication(Adw.Application):
             file_dialog.select_folder(dialog.get_root(), None, on_chosen)
 
         choose.connect("clicked", on_choose)
-        dialog.present(self.get_active_window())
-
-    def show_shortcuts(self):
-        dialog = Adw.ShortcutsDialog()
-        for title, items in (
-            ("Org", (("Cycle TODO state (C-c C-t)", "<Ctrl>c"),
-                     ("Schedule (C-c C-s)", "<Ctrl>c"),
-                     ("Set deadline (C-c C-d)", "<Ctrl>c"),
-                     ("Open agenda (C-c a)", "<Ctrl>c"))),
-            ("Agenda", (("Open entry", "Return"),
-                        ("Cycle TODO state", "t"),
-                        ("Next / previous line", "n p"),
-                        ("Later / earlier", "f b"),
-                        ("Go to today", "period"),
-                        ("Day / week view", "d w"),
-                        ("Redo (refresh)", "r"),
-                        ("Quit", "q"))),
-            ("Files", (("New window", "<Ctrl>n"),
-                       ("Open", "<Ctrl>o"),
-                       ("Save", "<Ctrl>s"),
-                       ("Save as", "<Ctrl><Shift>s"),
-                       ("Close window", "<Ctrl>w"),
-                       ("Quit", "<Ctrl>q"))),
-            ("View", (("Zoom in", "<Ctrl>plus"),
-                      ("Zoom out", "<Ctrl>minus"),
-                      ("Reset zoom", "<Ctrl>0"),
-                      ("Preferences", "<Ctrl>comma"),
-                      ("Keyboard shortcuts", "<Ctrl>question"))),
-        ):
-            section = Adw.ShortcutsSection(title=title)
-            for item_title, accel in items:
-                section.add(Adw.ShortcutsItem(title=item_title, accelerator=accel))
-            dialog.add(section)
         dialog.present(self.get_active_window())
 
     def _on_about(self, *_):
