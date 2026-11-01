@@ -130,12 +130,14 @@ class BufferPicker(Gtk.Popover):
                 keyval == Gdk.KEY_g and modifiers == Gdk.ModifierType.CONTROL_MASK):
             self.close()
             return True
-        if modifiers:
+        control_navigation = (modifiers == Gdk.ModifierType.CONTROL_MASK
+                              and keyval in (Gdk.KEY_n, Gdk.KEY_p))
+        if modifiers and not control_navigation:
             return False
-        if keyval in (Gdk.KEY_Up, Gdk.KEY_Down):
+        if keyval in (Gdk.KEY_Up, Gdk.KEY_Down) or control_navigation:
             row = self.listbox.get_selected_row()
             if row and self.results:
-                index = row.get_index() + (1 if keyval == Gdk.KEY_Down else -1)
+                index = row.get_index() + (1 if keyval in (Gdk.KEY_Down, Gdk.KEY_n) else -1)
                 target = self.listbox.get_row_at_index(max(0, min(index, len(self.results) - 1)))
                 self.listbox.select_row(target)
                 target.grab_focus()

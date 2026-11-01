@@ -165,8 +165,6 @@ class EditorTab(Adw.Bin):
 
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                        primary=True, tooltip_text="Main Menu"))
-        header.pack_end(Gtk.Button(icon_name="document-save-symbolic",
-                                   tooltip_text="Save (Ctrl+S)", action_name="win.save"))
 
         scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True)
         self.get_application().setup_scroll_zoom(scroller)
