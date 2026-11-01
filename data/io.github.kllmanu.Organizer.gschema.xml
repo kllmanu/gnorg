@@ -43,13 +43,13 @@
     </key>
     <key name="agenda-directory" type="s">
       <default>'~/org'</default>
-      <summary>Agenda folder</summary>
-      <description>Folder whose .org files (including subfolders) are shown in the agenda. A leading ~ is expanded to the home folder.</description>
+      <summary>Calendar folder</summary>
+      <description>Folder whose .org files (including subfolders) are shown in the calendar. A leading ~ is expanded to the home folder.</description>
     </key>
     <key name="hide-weekends" type="b">
       <default>true</default>
       <summary>Hide weekends</summary>
-      <description>Show only Monday through Friday in the weekly agenda without changing dated entries.</description>
+      <description>Show only Monday through Friday in the weekly calendar without changing dated entries.</description>
     </key>
   </schema>
 </schemalist>

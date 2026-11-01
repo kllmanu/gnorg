@@ -92,7 +92,7 @@ class EditorTab(Adw.Bin):
             "C-c C-c": self.toggle_checkbox,
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
-            "C-c a": app.show_agenda,
+            "C-c c": app.show_agenda,
             "C-c f": self.window.show_files,
             "C-x C-c": lambda: app.activate_action("quit", None),
             "C-x C-f": self.open_dialog,
@@ -688,7 +688,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self.stack.add_titled_with_icon(box, "files", "Files", "text-x-generic-symbolic")
         self.agenda_container = Adw.Bin()
         self.stack.add_titled_with_icon(
-            self.agenda_container, "agenda", "Agenda", "x-office-calendar-symbolic")
+            self.agenda_container, "agenda", "Calendar", "x-office-calendar-symbolic")
         self.view_switcher = Adw.ViewSwitcherTitle(stack=self.stack, title=APP_NAME)
         self.switcher_bar = Adw.ViewSwitcherBar(stack=self.stack)
         self.view_switcher.bind_property(
@@ -993,13 +993,13 @@ class OrganizerApplication(Adw.Application):
         win = self.window_for_path(entry.path)
         if win:
             ok, message = win.edit_heading(entry.line, entry.heading_text, change)
-            return message if ok else "The heading was not found, refresh the agenda"
+            return message if ok else "The heading was not found, refresh the calendar"
         try:
             with open(entry.path, encoding="utf-8") as f:
                 lines = f.read().split("\n")
             idx = locate_heading(lines, entry.line, entry.heading_text)
             if idx is None:
-                return "The heading was not found, refresh the agenda"
+                return "The heading was not found, refresh the calendar"
             edit, message = change(lines, idx)
             lines = org.apply_edit(lines, edit)
             tmp = entry.path + ".organizer-tmp"
@@ -1069,9 +1069,9 @@ class OrganizerApplication(Adw.Application):
         editor_group.add(line_numbers_row)
         page.add(editor_group)
         group = Adw.PreferencesGroup(
-            title="Agenda",
-            description="All .org files in this folder and its subfolders appear in the agenda.")
-        row = Adw.ActionRow(title="Agenda Folder", subtitle=short_path(self.agenda_directory()))
+            title="Calendar",
+            description="All .org files in this folder and its subfolders appear in the calendar.")
+        row = Adw.ActionRow(title="Calendar Folder", subtitle=short_path(self.agenda_directory()))
         choose = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
                             tooltip_text="Choose Folder", css_classes=["flat"])
         row.add_suffix(choose)
@@ -1079,7 +1079,7 @@ class OrganizerApplication(Adw.Application):
         group.add(row)
         weekends_row = Adw.SwitchRow(
             title="Hide Weekends",
-            subtitle="Show only Monday through Friday in the agenda.",
+            subtitle="Show only Monday through Friday in the calendar.",
             active=self.hide_weekends)
         weekends_row.connect(
             "notify::active", lambda row, *_: self.set_hide_weekends(row.get_active()))
@@ -1103,7 +1103,7 @@ class OrganizerApplication(Adw.Application):
                     window.agenda.refresh(keep_scroll=False)
 
         def on_choose(_button):
-            file_dialog = Gtk.FileDialog(title="Choose Agenda Folder")
+            file_dialog = Gtk.FileDialog(title="Choose Calendar Folder")
             if os.path.isdir(self.agenda_directory()):
                 file_dialog.set_initial_folder(Gio.File.new_for_path(self.agenda_directory()))
             file_dialog.select_folder(dialog.get_root(), None, on_chosen)

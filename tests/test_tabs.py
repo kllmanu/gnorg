@@ -313,7 +313,7 @@ class TabTests(unittest.TestCase):
             agenda.refresh()
             agenda.refresh()
             toast.assert_called_once_with(
-                "The agenda folder /missing-org does not exist. Choose a folder in Preferences.")
+                "The calendar folder /missing-org does not exist. Choose a folder in Preferences.")
 
     def test_hide_weekends_preference_updates_agendas_and_preserves_entries(self):
         import datetime as dt
@@ -433,6 +433,20 @@ class TabTests(unittest.TestCase):
             self.assertEqual(
                 tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset(), 5)
 
+    def test_calendar_shortcut_from_editor_and_calendar(self):
+        tab = self.app.new_tab()
+        tab.present()
+        window = tab.window
+        for _ in range(2):
+            self.assertTrue(window._on_key_pressed(
+                None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
+            self.assertTrue(window._on_key_pressed(None, Gdk.KEY_c, 0, Gdk.ModifierType(0)))
+            self.assertIs(window.active_view, window.agenda)
+            self.assertEqual(window.get_title(), "Calendar – Organizer")
+            self.assertNotIn("C-c a", window.active_view._org_key_sequences.commands)
+        self.assertNotIn("C-c a", tab._org_key_sequences.commands)
+        self.assertIn("C-c C-c", tab._org_key_sequences.commands)
+
     def test_files_shortcut_without_open_files_creates_editor(self):
         self.app.show_agenda()
         window = self.app.agenda.window
@@ -471,7 +485,7 @@ class TabTests(unittest.TestCase):
         self.assertIs(window.switcher_bar.get_stack(), window.stack)
         pages = window.stack.get_pages()
         self.assertEqual(pages.get_n_items(), 2)
-        self.assertEqual([pages.get_item(i).get_title() for i in range(2)], ["Files", "Agenda"])
+        self.assertEqual([pages.get_item(i).get_title() for i in range(2)], ["Files", "Calendar"])
         self.assertTrue(all(pages.get_item(i).get_icon_name() for i in range(2)))
         tab.present()
         window.view_switcher.set_view_switcher_enabled(False)
@@ -479,7 +493,7 @@ class TabTests(unittest.TestCase):
         self.assertTrue(window.switcher_bar.get_reveal())
         window.stack.set_visible_child_name("agenda")
         self.assertIs(window._header.get_title_widget(), window.view_switcher)
-        self.assertEqual(window.view_switcher.get_title(), "Agenda")
+        self.assertEqual(window.view_switcher.get_title(), "Calendar")
         window.stack.set_visible_child_name("files")
         tab.buffer.set_text("* Unsaved")
         self.assertEqual(window.view_switcher.get_title(), tab.title_widget.get_title())

@@ -66,7 +66,7 @@ class AgendaView(Adw.Bin):
         self.actions = Gio.SimpleActionGroup()
         self.insert_action_group("win", self.actions)
 
-        self.title_widget = Adw.WindowTitle(title="Agenda")
+        self.title_widget = Adw.WindowTitle(title="Calendar")
         self.header = Adw.HeaderBar(title_widget=self.title_widget)
         self.open_button = Gtk.Button(tooltip_text="Open documents")
         open_content = Gtk.Box(spacing=6)
@@ -156,7 +156,7 @@ class AgendaView(Adw.Bin):
             "C-c C-t": self.cycle_todo,
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
-            "C-c a": self.app.show_agenda,
+            "C-c c": self.app.show_agenda,
             "C-c f": self.window.show_files,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
@@ -183,7 +183,7 @@ class AgendaView(Adw.Bin):
         self.window.show_files()
 
     def _update_title(self):
-        self.window.set_title("Agenda – Organizer")
+        self.window.set_title("Calendar – Organizer")
 
     def toast(self, message):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=4))
@@ -205,7 +205,7 @@ class AgendaView(Adw.Bin):
         if not files:
             reason = "does not exist" if not os.path.isdir(directory) else "has no .org files"
             folder_message = (
-                f"The agenda folder {directory} {reason}. Choose a folder in Preferences.")
+                f"The calendar folder {directory} {reason}. Choose a folder in Preferences.")
         if folder_message and folder_message != self._folder_message:
             self.toast(folder_message)
         self._folder_message = folder_message
