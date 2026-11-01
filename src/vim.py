@@ -725,6 +725,7 @@ class OrganizerApplication(Adw.Application):
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
         self._quitting = False
+        self._session_restored = False
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -774,6 +775,7 @@ class OrganizerApplication(Adw.Application):
         self.set_accels_for_action("app.preferences", ["<Ctrl>comma"])
 
     def do_activate(self):
+        self.restore_session()
         windows = self.editor_windows()
         if windows:
             windows[0].present()
@@ -781,8 +783,23 @@ class OrganizerApplication(Adw.Application):
             self.new_tab().present()
 
     def do_open(self, files, _n_files, _hint):
+        self.restore_session()
         for file in files:
             self.open_file(file)
+
+    def restore_session(self):
+        if self._session_restored:
+            return
+        self._session_restored = True
+        if self.settings:
+            for uri in self.settings.get_strv("session-files"):
+                self.open_file(Gio.File.new_for_uri(uri))
+
+    def save_session(self):
+        if self.settings:
+            uris = [tab.file.get_uri() for tab in self.editor_tabs() if tab.file is not None]
+            self.settings.set_strv("session-files", uris)
+            Gio.Settings.sync()
 
     def new_window(self):
         win = EditorWindow(self)
@@ -818,6 +835,7 @@ class OrganizerApplication(Adw.Application):
                 then(win)
             return win
         win = self.new_tab()
+        win.file = file
         win.load(file, (lambda: then(win)) if then else None)
         win.present()
         return win
@@ -1008,6 +1026,7 @@ class OrganizerApplication(Adw.Application):
         def check_next():
             tab = next(tabs, None)
             if tab is None:
+                self.save_session()
                 for window in list(self.get_windows()):
                     window.destroy()
                 self.agenda = None

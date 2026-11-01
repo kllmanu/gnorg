@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
+    <key name="session-files" type="as">
+      <default>[]</default>
+      <summary>Files in the previous session</summary>
+      <description>Ordered file URIs to reopen at startup. Untitled tabs are not included.</description>
+    </key>
     <key name="org-indent-mode" type="b">
       <default>true</default>
       <summary>Org indent mode</summary>

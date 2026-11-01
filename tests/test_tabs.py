@@ -3,7 +3,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
@@ -117,3 +117,37 @@ class TabTests(unittest.TestCase):
             self.app.lookup_action("quit").activate(None)
             quit_app.assert_called_once_with()
         self.assertEqual(self.app.get_windows(), [])
+
+    def test_session_restores_file_tabs_in_order_without_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            files = []
+            for name in ("first.org", "second.org"):
+                path = os.path.join(directory, name)
+                with open(path, "w") as stream:
+                    stream.write("* " + name)
+                files.append(Gio.File.new_for_path(path))
+            for file in files:
+                self.app.open_file(file)
+            self.app.new_tab()
+            settings = Mock()
+            uris = [file.get_uri() for file in files]
+            settings.get_strv.return_value = uris
+            with patch.object(self.app, "settings", settings):
+                with patch.object(self.app, "quit"):
+                    self.app._on_quit()
+                settings.set_strv.assert_called_once_with("session-files", uris)
+                self.app._session_restored = False
+                self.app.do_open([files[0]], 1, "")
+                self.app.restore_session()
+                self.assertEqual(len(self.app.editor_tabs()), 2)
+                self.wait_for(lambda: all(tab.get_text() for tab in self.app.editor_tabs()))
+                self.assertEqual([tab.file.get_uri() for tab in self.app.editor_tabs()], uris)
+
+    def test_cancelled_quit_does_not_save_session(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Unsaved")
+        settings = Mock()
+        with patch.object(self.app, "settings", settings):
+            self.app._on_quit()
+            tab.window.get_visible_dialog().emit("response", "cancel")
+            settings.set_strv.assert_not_called()
