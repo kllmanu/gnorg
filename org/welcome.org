@@ -1,0 +1,51 @@
+#+TITLE: Welcome to the Gnorg demo
+#+CATEGORY: Demo
+#+STARTUP: content
+
+* Welcome to Gnorg :demo:
+These are editable demo files. Run make run to use this project's org folder
+instead of your saved Calendar Folder. The saved preference is not changed.
+An installed launch still uses your usual folder. Open files from your previous
+session may also appear, since open Org documents remain agenda sources.
+
+Click a filename below the mini-calendar to open it. Toggle its checkmark to
+include or exclude it from Agenda and Calendar.
+
+** Inline formatting
+Try *bold*, /italic/, _underline_, +strikethrough+, =verbatim=, and ~code~.
+Literal spans keep their contents unchanged: =*not bold*= and ~/not italic/~.
+
+| Format     | Example          |
+|------------+------------------|
+| Bold       | *important*      |
+| Italic     | /emphasis/       |
+| Underline  | _remember_       |
+| Strike     | +obsolete+       |
+| Verbatim   | =literal text=   |
+| Code       | ~print("hello")~ |
+
+** Mouse interactions :editor:
+Click this headline to fold or show its immediate children.
+Click tags or their hover edit icon to edit them.
+Hover over the STARTUP line above to change its folding mode.
+
+*** A nested heading
+This body stays folded when its parent is opened to show children.
+
+*** Another nested heading
+Use Tab to cycle folding, or Shift+Tab for the whole document.
+
+** Keyboard tour
+- Alt+h / Alt+l: switch between Files, Agenda, and Calendar.
+- Alt+j / Alt+k: select files in the utility pane.
+- Alt+Up / Alt+Down: move a heading's whole subtree among siblings.
+- Alt+Left / Alt+Right: promote or demote a subtree.
+- Ctrl+Alt+e: open the current saved file at the cursor in Emacs.
+- In Agenda: d for one day, w for the week, f/b to navigate, . for today.
+
+** Literal Org example
+Markup inside source blocks is not formatted or treated as real headings.
+#+BEGIN_SRC org
+* Not a real heading
+*bold* /italic/ +strikethrough+
+#+END_SRC

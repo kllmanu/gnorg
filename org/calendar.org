@@ -1,0 +1,41 @@
+#+TITLE: Calendar examples
+#+CATEGORY: Life
+#+STARTUP: showall
+
+* Weekly rhythm :routine:
+These repeating timestamps populate future weeks too.
+Calendar shows active timestamps; scheduled tasks and deadlines are in Agenda.
+
+** Team planning :work:
+<2026-11-02 Mon 09:00-10:00 +1w>
+
+** Design review :work:
+<2026-11-02 Mon 09:30-10:30 +1w>
+Overlaps planning so you can test side-by-side calendar event layout.
+
+** Lunch walk :personal:
+<2026-11-03 Tue 12:00-12:45 +1w>
+
+** Focus time :work:
+<2026-11-04 Wed 14:00-16:00 +1w>
+
+** Weekly wrap-up :work:
+<2026-11-06 Fri 16:00-16:30 +1w>
+
+** Market :home:
+<2026-11-07 Sat 10:00-11:00 +1w>
+Enable weekends in Preferences to see this in Calendar.
+Agenda includes weekends regardless of the Calendar preference.
+
+* All-day reminder :personal:
+<2026-11-05 Thu +1w>
+This appears in the calendar's all-day row.
+
+* Errands :home:
+Haircut <2026-11-03 Tue 17:00-17:30>
+Pick up groceries <2026-11-03 Tue 18:00>
+Each standalone timestamp uses its adjacent text as its agenda title.
+
+* Inactive note :demo:
+[2026-11-02 Mon 08:00]
+Inactive timestamps can be edited but do not appear as calendar events.

@@ -3,7 +3,7 @@ APP_DIR = $(PREFIX)/share/gnorg
 SCHEMA_DIR = $(PREFIX)/share/glib-2.0/schemas
 
 run: schemas
-	python3 src/app.py
+	GNORG_AGENDA_DIRECTORY="$(CURDIR)/org" python3 src/app.py
 
 test:
 	python3 -m unittest discover -s tests

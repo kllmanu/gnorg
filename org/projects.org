@@ -1,0 +1,50 @@
+#+TITLE: Projects and checklists
+#+CATEGORY: Projects
+#+STARTUP: content
+
+* TODO Prepare the demo [1/3] [33%] :work:demo:
+Click TODO states below and watch both progress cookies update.
+Only direct child tasks count; nested tasks belong to their own parent.
+
+** DONE Collect sample content :writing:
+CLOSED: [2026-11-02 Mon 09:00]
+
+** TODO Review the editor :testing:
+SCHEDULED: <2026-11-02 Mon 10:00 +1w>
+Click the timestamp to edit its date and optional time range.
+
+*** TODO Check a nested task
+This task does not count toward the top-level project's cookies.
+
+** TODO Share the demo :review:
+DEADLINE: <2026-11-06 Fri>
+Try C-c C-c on this heading to edit its tags.
+
+* Shopping [2/4] [50%] :home:
+- [X] Coffee
+- [X] Bread
+- [ ] Fruit
+- [-] Supplies [1/2]
+  - [X] Pens
+  - [ ] Paper
+
+* Completed checklist [2/2] [100%] :demo:
+Completed cookies appear green.
+- [X] Create demo files
+- [X] Add instructions
+
+* Reorder and indent playground :editor:
+Move Second above First with Alt+Up, or demote it under First with Alt+Right.
+The first child cannot be demoted unless a preceding sibling can be its parent.
+
+** First
+Keep this body with its heading.
+
+*** Child of First
+This subtree moves with First.
+
+** Second
+Put the cursor here to try movement and indentation.
+
+** Third
+Undo restores structural edits.

@@ -1486,7 +1486,11 @@ class EditorWindow(Adw.ApplicationWindow):
 
 class GnorgApplication(Adw.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        self.agenda_directory_override = os.environ.get("GNORG_AGENDA_DIRECTORY", "")
+        flags = Gio.ApplicationFlags.HANDLES_OPEN
+        if self.agenda_directory_override:
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
+        super().__init__(application_id=APP_ID, flags=flags)
         self.zoom = None
         self.zoom_css = None
         self.settings = None
@@ -1706,6 +1710,8 @@ class GnorgApplication(Adw.Application):
     # ---------- Org agenda ----------
 
     def agenda_directory(self):
+        if self.agenda_directory_override:
+            return os.path.abspath(os.path.expanduser(self.agenda_directory_override))
         directory = self.settings.get_string("agenda-directory") if self.settings else ""
         return os.path.abspath(os.path.expanduser(directory or DEFAULT_AGENDA_DIRECTORY))
 
@@ -2060,6 +2066,10 @@ class GnorgApplication(Adw.Application):
         row = Adw.ActionRow(title="Calendar Folder", subtitle=short_path(self.agenda_directory()))
         choose = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
                             tooltip_text="Choose Folder", css_classes=["flat"])
+        if self.agenda_directory_override:
+            choose.set_sensitive(False)
+            row.set_subtitle(short_path(self.agenda_directory()) + " (launch override)")
+            choose.set_tooltip_text("Folder overridden by GNORG_AGENDA_DIRECTORY for this run")
         row.add_suffix(choose)
         row.set_activatable_widget(choose)
         group.add(row)
