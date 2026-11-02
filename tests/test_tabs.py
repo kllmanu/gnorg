@@ -52,6 +52,142 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
 
+    def test_heading_cycle_and_startup_visibility(self):
+        text = "* Parent\nBody\n** Child\nChild body\n*** Grandchild\nDetails\n* Next\nTail"
+        tab = self.app.new_tab()
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+
+        def hidden(line):
+            return tab.buffer.get_iter_at_line(line)[1].has_tag(tab.org_fold.hidden)
+
+        for expected in ((True, True, True), (True, False, True), (False, False, False)):
+            self.assertTrue(tab.window._on_key_pressed(
+                None, Gdk.KEY_Tab, 0, Gdk.ModifierType(0)))
+            self.assertEqual(tuple(hidden(i) for i in (1, 2, 4)), expected)
+        self.assertFalse(tab.buffer.get_modified())
+        self.assertEqual(tab.get_text(), text)
+        for option, expected in (
+                ("overview", (True, True, True)),
+                ("content", (True, False, False)),
+                ("showall", (False, False, False)),
+                ("showeverything", (False, False, False))):
+            tab._set_file(Gio.File.new_for_path("/org/folding.org"),
+                          f"#+STARTUP: {option}\n{text}")
+            self.assertEqual(tuple(hidden(i) for i in (2, 3, 5)), expected)
+            self.assertFalse(tab.buffer.get_modified())
+        tab.org_fold.cycle(global_cycle=True)
+        self.assertTrue(hidden(3))
+        tab.goto_line(4)
+        self.assertFalse(hidden(4))
+
+    def test_folding_preserves_state_after_body_edits_and_reads_startup_changes(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent\nBody\n** Child\nDetails\n")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        self.assertTrue(tab.org_fold.cycle())
+        tab.buffer.insert(tab.buffer.get_iter_at_line(1)[1], "More ")
+        tab.org_fold.refresh()
+        self.assertTrue(tab.buffer.get_iter_at_line(2)[1].has_tag(tab.org_fold.hidden))
+        tab.buffer.insert(tab.buffer.get_start_iter(), "#+STARTUP: content\n")
+        tab.org_fold.refresh()
+        self.assertFalse(tab.buffer.get_iter_at_line(3)[1].has_tag(tab.org_fold.hidden))
+        self.assertTrue(tab.buffer.get_iter_at_line(4)[1].has_tag(tab.org_fold.hidden))
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        self.assertFalse(tab.org_fold.cycle())
+
+    def test_fold_indicators_follow_hidden_content_without_changing_text(self):
+        tab = self.app.new_tab()
+        text = "* Parent\nBody\n** Child\nDetails\n* Empty"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+        tab.org_fold.refresh()
+        self.assertEqual(tab.org_fold.indicators, {})
+        tab.org_fold.cycle()
+        self.assertEqual(set(tab.org_fold.indicators), {0})
+        self.assertEqual(tab.org_fold.indicators[0].get_label(), "...")
+        indicator = tab.org_fold.indicators[0]
+        self.assertFalse(indicator.has_css_class("dim-label"))
+        tag = tab.buffer.create_tag(None, foreground="#26a269", weight=700)
+        end = tab.buffer.get_iter_at_line(0)[1]
+        end.forward_to_line_end()
+        tab.buffer.apply_tag(tag, tab.buffer.get_start_iter(), end)
+        tab.org_fold._layout_indicators()
+        self.assertEqual(tab.org_fold._indicator_styles[0], ("rgb(38,162,105)", 700))
+        rect = tab.view.get_iter_location(end)
+        self.assertEqual(tab.org_fold._indicator_positions[0], (rect.x, rect.y))
+        tab.org_fold.cycle()
+        self.assertEqual(set(tab.org_fold.indicators), {0, 2})
+        tab.org_fold.cycle()
+        self.assertEqual(tab.org_fold.indicators, {})
+        tab.org_fold.cycle(global_cycle=True)
+        self.assertEqual(set(tab.org_fold.indicators), {0})
+        self.assertEqual(tab.get_text(), text)
+        self.assertFalse(tab.buffer.get_modified())
+
+    def test_fold_indicator_actual_bounds_align_with_heading_without_trailing_spaces(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent   \nBody\n* Next")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+        tab.org_fold.cycle()
+        label = tab.org_fold.indicators[0]
+        self.wait_for(lambda: label.get_width() > 0)
+        end = tab.buffer.get_iter_at_line_offset(0, len("* Parent"))[1]
+        rect = tab.view.get_iter_location(end)
+        x, y = tab.view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, rect.x, rect.y)
+
+        def aligned():
+            ok, bounds = label.compute_bounds(tab.view)
+            return ok and abs(bounds.get_x() - x) <= 1 and abs(bounds.get_y() - y) <= 1
+
+        self.wait_for(aligned)
+        self.assertEqual(tab.get_text(), "* Parent   \nBody\n* Next")
+
+    def test_cursor_skips_folded_lines_in_both_directions(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent\nBody\n** Child\nDetails\n* Next\nTail")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.org_fold.cycle()
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(1)[1])
+        cursor = tab.buffer.get_iter_at_mark(tab.buffer.get_insert())
+        self.assertEqual(cursor.get_line(), 4)
+        self.assertFalse(cursor.has_tag(tab.org_fold.hidden))
+        self.assertFalse(tab.buffer.get_has_selection())
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(3)[1])
+        cursor = tab.buffer.get_iter_at_mark(tab.buffer.get_insert())
+        self.assertEqual(cursor.get_line(), 0)
+        self.assertFalse(cursor.has_tag(tab.org_fold.hidden))
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(4)[1])
+        tab.org_fold.cycle()
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(5)[1])
+        self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line(), 4)
+
+    def test_collapsed_subtree_has_no_gap_with_org_indentation(self):
+        tab = self.app.new_tab()
+        text = "* Parent\nBody\n** Child\nDetails\n\n\n* Next\nTail"
+        tab.buffer.set_text(text)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+        tab.org_fold.cycle()
+
+        def compact():
+            first = tab.view.get_iter_location(tab.buffer.get_start_iter())
+            following = tab.view.get_iter_location(tab.buffer.get_iter_at_line(6)[1])
+            return following.y == first.y + first.height
+
+        self.wait_for(compact)
+        tab.org_fold.cycle()
+        self.wait_for(lambda: not tab.buffer.get_iter_at_line(2)[1].has_tag(tab.org_fold.hidden))
+        tab.org_fold.cycle()
+        tab.org_fold.cycle()
+        self.wait_for(compact)
+        self.assertEqual(tab.get_text(), text)
+
     def test_timestamp_shortcut_inserts_active_timestamp_and_undoes_once(self):
         import org
 
@@ -807,6 +943,37 @@ class TabTests(unittest.TestCase):
                 self.assertIsNotNone(agenda._active_date_popover)
                 agenda._keyboard_quit()
                 self.wait_for(lambda: agenda._active_date_popover is None)
+
+    def test_agenda_cursor_navigates_and_keeps_selection_when_cycling_todo(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tasks.org")
+            date = dt.date.today().isoformat()
+            with open(path, "w") as stream:
+                stream.write(f"* TODO First\n<{date} 09:00>\n"
+                             f"* TODO Second\n<{date} 10:00>\n")
+            tab = self.app.open_file(Gio.File.new_for_path(path))
+            self.wait_for(lambda: bool(tab.get_text()))
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                self.app.show_weekly_agenda(tab.window)
+                agenda = tab.window.weekly_agenda
+                self.assertEqual(agenda.selected_item.entry.display_title, "First")
+                self.assertTrue(agenda.entry_buttons[0][1].has_css_class("agenda-cursor"))
+                for key in (Gdk.KEY_Down, Gdk.KEY_t, Gdk.KEY_t):
+                    self.assertTrue(tab.window._on_key_pressed(
+                        None, key, 0, Gdk.ModifierType(0)))
+                    self.assertEqual(agenda.selected_item.entry.display_title, "Second")
+                    self.assertTrue(agenda.entry_buttons[1][1].has_css_class("agenda-cursor"))
+                    self.assertFalse(agenda.entry_buttons[0][1].has_css_class("agenda-cursor"))
+                self.assertNotIn("* TODO Second", tab.get_text())
+                self.assertTrue(tab.buffer.get_modified())
+                self.assertTrue(tab.window._on_key_pressed(
+                    None, Gdk.KEY_Up, 0, Gdk.ModifierType(0)))
+                self.assertEqual(agenda.selected_item.entry.display_title, "First")
+                agenda.refresh()
+                self.assertEqual(agenda.selected_item.entry.display_title, "First")
+                self.assertTrue(agenda.entry_buttons[0][1].has_css_class("agenda-cursor"))
 
     def test_weekly_agenda_colors_keywords_and_uses_compact_rows(self):
         import datetime as dt

@@ -165,6 +165,9 @@ class AgendaView(Adw.Bin):
             .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
             .organizer-agenda > row { padding: 0; }
             .organizer-agenda button { padding: 0; min-height: 0; }
+            .organizer-agenda button.agenda-cursor {
+                background: alpha(@accent_bg_color, 0.18);
+                box-shadow: inset 3px 0 @accent_bg_color; }
         """)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -311,6 +314,8 @@ class AgendaView(Adw.Bin):
 
     def _refresh_weekly(self, entries, today):
         selected = self.selected_item
+        selected_index = next((i for i, (item, _) in enumerate(self.entry_buttons)
+                               if item == selected), 0)
         focus = self.window.get_focus()
         restore_focus = focus is not None and focus.is_ancestor(self.view)
         self.listbox.remove_all()
@@ -332,12 +337,20 @@ class AgendaView(Adw.Bin):
                                self._select(event) if widget.has_focus() else None)
                 self.listbox.append(button)
                 self.entry_buttons.append((item, button))
-                if item == selected:
+                if selected is not None and (
+                        item.entry.path, item.entry.line, item.date, item.kind
+                ) == (
+                        selected.entry.path, selected.entry.line, selected.date, selected.kind):
                     self.selected_item = item
                     selected_button = button
             else:
                 row = Gtk.ListBoxRow(child=label, activatable=False, selectable=False)
                 self.listbox.append(row)
+        if self.selected_item is None and self.entry_buttons:
+            self.selected_item, selected_button = self.entry_buttons[
+                min(selected_index, len(self.entry_buttons) - 1)]
+        if self.selected_item is not None:
+            self._select(self.selected_item)
         if restore_focus:
             (selected_button or self.view).grab_focus()
 
@@ -433,6 +446,12 @@ class AgendaView(Adw.Bin):
 
     def _select(self, item):
         self.selected_item = item
+        if self.weekly:
+            for event, button in self.entry_buttons:
+                if event == item:
+                    button.add_css_class("agenda-cursor")
+                else:
+                    button.remove_css_class("agenda-cursor")
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         if state & Gtk.accelerator_get_default_mod_mask():
@@ -442,6 +461,7 @@ class AgendaView(Adw.Bin):
             "period": self.goto_today, "r": self.refresh, "g": self.refresh,
             "t": self.cycle_todo, "q": self.close,
             "n": lambda: self._move(1), "p": lambda: self._move(-1),
+            "Down": lambda: self._move(1), "Up": lambda: self._move(-1),
             "Return": self.open_entry,
         }
         command = commands.get(Gdk.keyval_name(keyval))
@@ -456,7 +476,7 @@ class AgendaView(Adw.Bin):
         index = next((i for i, (item, _) in enumerate(self.entry_buttons)
                       if item == self.selected_item), -1 if delta > 0 else len(self.entry_buttons))
         item, button = self.entry_buttons[max(0, min(index + delta, len(self.entry_buttons) - 1))]
-        self.selected_item = item
+        self._select(item)
         button.grab_focus()
 
     def shift(self, direction):

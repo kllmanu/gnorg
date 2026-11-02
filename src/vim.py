@@ -15,7 +15,7 @@ import org  # noqa: E402
 from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
-from indent import OrgIndent  # noqa: E402
+from indent import OrgFold, OrgIndent  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
@@ -105,6 +105,7 @@ class EditorTab(Adw.Bin):
         })
         self._setup_style()
         self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
+        self.org_fold = OrgFold(self.view)
 
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())
@@ -314,6 +315,7 @@ class EditorTab(Adw.Bin):
         return self.buffer.get_text(start, end, True)
 
     def goto_line(self, line):
+        self.org_fold.reveal(line)
         ok, it = self.buffer.get_iter_at_line(line)
         if not ok:
             it = self.buffer.get_end_iter()
@@ -616,6 +618,7 @@ class EditorTab(Adw.Bin):
         self.buffer.begin_irreversible_action()
         self.buffer.set_text(text)
         self.buffer.end_irreversible_action()
+        self.org_fold.reset()
         self.buffer.place_cursor(self.buffer.get_start_iter())
         self.buffer.set_modified(False)
         self._update_language(raw)
@@ -770,6 +773,12 @@ class EditorWindow(Adw.ApplicationWindow):
         tab = self.active_view
         if tab is None:
             return False
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
+                and keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab)
+                and modifiers in (Gdk.ModifierType(0), Gdk.ModifierType.SHIFT_MASK)):
+            return tab.org_fold.cycle(
+                bool(modifiers & Gdk.ModifierType.SHIFT_MASK) or keyval == Gdk.KEY_ISO_Left_Tab)
         if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
                 and state & Gtk.accelerator_get_default_mod_mask() == Gdk.ModifierType.SHIFT_MASK
                 and keyval in (Gdk.KEY_Up, Gdk.KEY_Down)):
@@ -1265,7 +1274,8 @@ class OrganizerApplication(Adw.Application):
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
-            f'textview.organizer-editor, .organizer-agenda label {{ font-family: "Iosevka", monospace; '
+            f'textview.organizer-editor, .organizer-agenda label, .fold-indicator {{ '
+            f'font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
         for window in self.editor_tabs():
             window.org_indent.queue_refresh()
