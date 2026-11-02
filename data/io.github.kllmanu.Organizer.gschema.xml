@@ -25,6 +25,11 @@
       <summary>Files in the previous session</summary>
       <description>Ordered file URIs to reopen at startup. Missing files are skipped. Untitled tabs are not included.</description>
     </key>
+    <key name="session-cursor-positions" type="a{s(uu)}">
+      <default>{}</default>
+      <summary>Cursor positions in the previous session</summary>
+      <description>File URIs mapped to zero-based cursor lines and character columns. Saved on quit and restored after loading each file, revealing folded sections as needed. Positions are clamped if files have become shorter.</description>
+    </key>
     <key name="session-active-file" type="s">
       <default>''</default>
       <summary>Last selected file</summary>

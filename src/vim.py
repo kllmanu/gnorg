@@ -1309,11 +1309,34 @@ class OrganizerApplication(Adw.Application):
             return
         self._session_restored = True
         if self.settings:
+            positions = self.settings.get_value("session-cursor-positions").unpack()
+
+            def restore_cursor(tab):
+                position = positions.get(tab.file.get_uri())
+                if position is not None:
+                    line, column = position
+                    line = min(line, tab.buffer.get_line_count() - 1)
+                    tab.org_fold.reveal(line)
+                    iterator = tab.buffer.get_iter_at_line(line)[1]
+                    end = iterator.copy()
+                    if not end.ends_line():
+                        end.forward_to_line_end()
+                    iterator.set_line_offset(min(column, end.get_line_offset()))
+                    tab.buffer.place_cursor(iterator)
+
+                def focus_restored_editor():
+                    if tab.get_root() is not None and tab.window.active_view is tab:
+                        tab.view.grab_focus()
+                        tab.view.scroll_to_mark(tab.buffer.get_insert(), 0.1, False, 0, 0)
+                    return GLib.SOURCE_REMOVE
+
+                GLib.idle_add(focus_restored_editor)
+
             selected = self.settings.get_string("session-active-file")
             for uri in self.settings.get_strv("session-files"):
                 file = Gio.File.new_for_uri(uri)
                 if not self.file_removed(file) and file.query_exists(None):
-                    self.open_file(file)
+                    self.open_file(file, then=restore_cursor)
             if selected:
                 file = Gio.File.new_for_uri(selected)
                 if not self.file_removed(file) and file.query_exists(None):
@@ -1324,6 +1347,13 @@ class OrganizerApplication(Adw.Application):
             uris = [tab.file.get_uri() for tab in self.editor_tabs() if tab.file is not None]
             self.settings.set_strv("session-files", uris)
             self.settings.set_string("session-active-file", self._last_selected_file)
+            positions = {}
+            for tab in self.editor_tabs():
+                if tab.file is not None:
+                    cursor = tab.buffer.get_iter_at_mark(tab.buffer.get_insert())
+                    positions[tab.file.get_uri()] = (cursor.get_line(), cursor.get_line_offset())
+            self.settings.set_value(
+                "session-cursor-positions", GLib.Variant("a{s(uu)}", positions))
             Gio.Settings.sync()
 
     def new_window(self):
