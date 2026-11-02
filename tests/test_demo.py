@@ -29,7 +29,7 @@ class DemoTests(EditorTestCase):
         with patch.object(self.app, "agenda_directory_override", directory):
             files = self.app.agenda_files()
             self.assertEqual({os.path.basename(path) for path in files},
-                             {"welcome.org", "projects.org", "calendar.org"})
+                             {"Work.org", "Projects.org", "Calendar.org"})
             _, _, entries = self.app.agenda_entries()
         self.assertTrue(any(entry.tags for entry in entries))
         days = org.build_agenda(entries, dt.date(2026, 11, 2), 7, dt.date(2026, 11, 2))
