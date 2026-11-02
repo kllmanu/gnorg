@@ -188,6 +188,21 @@ class TabTests(unittest.TestCase):
         self.wait_for(compact)
         self.assertEqual(tab.get_text(), text)
 
+    def test_tab_opens_folded_leaf_immediately_and_skips_unchanged_children_state(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent\nBody\n* Next")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        for expected_hidden in (True, False, True, False):
+            tab.org_fold.cycle()
+            self.assertEqual(tab.buffer.get_iter_at_line(1)[1].has_tag(tab.org_fold.hidden),
+                             expected_hidden)
+        tab._set_file(Gio.File.new_for_path("/org/folding.org"),
+                      "#+STARTUP: content\n* Parent\nBody\n** Child\nDetails\n* Next")
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(1)[1])
+        tab.org_fold.cycle()
+        self.assertFalse(tab.buffer.get_iter_at_line(2)[1].has_tag(tab.org_fold.hidden))
+        self.assertFalse(tab.buffer.get_iter_at_line(4)[1].has_tag(tab.org_fold.hidden))
+
     def test_timestamp_shortcut_inserts_active_timestamp_and_undoes_once(self):
         import org
 

@@ -137,6 +137,11 @@ class OrgFold:
                 return False
             level = next(depth for i, depth in headings if i == line)
             end = next((i for i, depth in headings if i > line and depth <= level), len(lines))
+            hidden_lines = {i for i in range(line + 1, end)
+                            if self.buffer.get_iter_at_line(i)[1].has_tag(self.hidden)}
+            children = [(i, depth) for i, depth in headings if line < i < end]
+            child_level = min((depth for _, depth in children), default=level + 1)
+            child_lines = {i for i, depth in children if depth == child_level}
             for entry in list(self.states):
                 mark, _state = entry
                 if line < self.buffer.get_iter_at_mark(mark).get_line() < end:
@@ -150,7 +155,11 @@ class OrgFold:
                 self.buffer.delete_mark(mark)
                 state = {"folded": "children", "children": "subtree", "subtree": "folded"}[state]
             else:
-                state = "children" if self.mode == "overview" else "folded"
+                state = "children" if hidden_lines else "folded"
+            if state == "children" and (
+                    not child_lines
+                    or hidden_lines == set(range(line + 1, end)) - child_lines):
+                state = "subtree"
             mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
             self.states.append((mark, state))
         self.refresh()
