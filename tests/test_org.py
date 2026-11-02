@@ -199,6 +199,22 @@ SCHEDULED: <2026-10-01 Thu +1w>
 
 
 class ParseTests(unittest.TestCase):
+    def test_file_category_is_used_in_agenda_with_filename_fallback(self):
+        for metadata, expected in (
+                ("#+CATEGORY: Work\n", "Work"),
+                ("  #+category:  Personal projects  \n", "Personal projects"),
+                ("#+CATEGORY:\n", "tasks"),
+                ("", "tasks"),
+                ("#+BEGIN_SRC org\n#+CATEGORY: Ignored\n#+END_SRC\n", "tasks"),
+                (":PROPERTIES:\n#+CATEGORY: Ignored\n:END:\n", "tasks")):
+            with self.subTest(metadata=metadata):
+                entries = org.parse_entries(
+                    metadata + "* Event <2026-11-02 Mon>\n** Child\n", "/org/tasks.org")
+                self.assertEqual([org.category(entry) for entry in entries], [expected, expected])
+                line = org.agenda_item_line(entries[0])
+                self.assertTrue(line.text.startswith("  " + expected[:11] + ":"))
+                self.assertEqual(line.spans[0], (2, 14, "category"))
+
     def setUp(self):
         self.entries = org.parse_entries(DOC, "test.org")
 

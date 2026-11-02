@@ -494,8 +494,9 @@ class AgendaView(Adw.Bin):
             "period": self.goto_today, "r": self.refresh, "g": self.refresh,
             "t": self.cycle_todo, "q": self.close,
             "n": lambda: self._move(1), "p": lambda: self._move(-1),
+            "j": lambda: self._move(1), "k": lambda: self._move(-1),
             "Down": lambda: self._move(1), "Up": lambda: self._move(-1),
-            "Return": self.open_entry,
+            "Return": self.open_entry, "space": self.open_entry,
         }
         command = commands.get(Gdk.keyval_name(keyval))
         if command is None:

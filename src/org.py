@@ -401,6 +401,7 @@ class Entry:
     closed: Timestamp | None = None
     timestamps: list = field(default_factory=list)
     timestamp_sources: list = field(default_factory=list)
+    category: str | None = None
 
     @property
     def is_todo(self):
@@ -449,6 +450,21 @@ def parse_planning(line):
 
 def parse_entries(text, path=None):
     lines = text.split("\n")
+    file_category = None
+    in_block = in_drawer = False
+    for line in lines:
+        if in_block:
+            in_block = not BLOCK_END_RE.match(line)
+            continue
+        if in_drawer:
+            in_drawer = not DRAWER_END_RE.match(line)
+            continue
+        if BLOCK_START_RE.match(line):
+            in_block = True
+        elif DRAWER_START_RE.match(line) and not DRAWER_END_RE.match(line):
+            in_drawer = True
+        elif match := re.match(r"^\s*#\+CATEGORY:\s*(.*?)\s*$", line, re.IGNORECASE):
+            file_category = match[1] or None
     entries = []
     current = None
     in_drawer = in_block = False
@@ -456,7 +472,8 @@ def parse_entries(text, path=None):
         heading = parse_heading(line)
         if heading:
             level, keyword, priority, title, tags = heading
-            current = Entry(path, i, level, keyword, priority, title, tags, heading_text=line)
+            current = Entry(path, i, level, keyword, priority, title, tags,
+                            heading_text=line, category=file_category)
             current.timestamps.extend(_active_timestamps(title))
             current.timestamp_sources.extend((None, i) for _ in current.timestamps)
             entries.append(current)
@@ -703,6 +720,8 @@ class AgendaLine:
 
 
 def category(entry):
+    if entry.category:
+        return entry.category
     return os.path.splitext(os.path.basename(entry.path))[0] if entry.path else "???"
 
 

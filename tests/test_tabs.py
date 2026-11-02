@@ -846,6 +846,25 @@ class TabTests(unittest.TestCase):
                 None, Gdk.KEY_k, 0, Gdk.ModifierType.ALT_MASK))
             self.assertIs(window.active_tab, tab)
 
+    def test_agenda_displays_file_category_and_unsaved_category_changes(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tasks.org")
+            text = f"#+CATEGORY: Work\n* Event <{dt.date.today().isoformat()}>\n"
+            with open(path, "w") as stream:
+                stream.write(text)
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.open_file(Gio.File.new_for_path(path))
+                self.wait_for(lambda: tab.get_text() == text)
+                self.app.show_weekly_agenda(tab.window)
+                agenda = tab.window.weekly_agenda
+                self.assertTrue(agenda.entry_buttons[0][1].get_child().get_label()
+                                .startswith("  Work:"))
+                tab.buffer.set_text(text.replace("#+CATEGORY: Work\n", ""))
+                self.wait_for(lambda: agenda.entry_buttons[0][1].get_child().get_label()
+                              .startswith("  tasks:"))
+
     def test_agenda_g_refreshes_entries_from_disk(self):
         import datetime as dt
 
@@ -1834,6 +1853,34 @@ class TabTests(unittest.TestCase):
                 self.assertIsNotNone(agenda._active_date_popover)
                 agenda._keyboard_quit()
                 self.wait_for(lambda: agenda._active_date_popover is None)
+
+    def test_agenda_j_k_navigate_entries_without_wrapping(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "events.org")
+            with open(path, "w") as stream:
+                stream.write(f"* First <{dt.date.today().isoformat()}>\n"
+                             f"* Second <{dt.date.today().isoformat()}>\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                self.app.show_weekly_agenda(tab.window)
+                agenda = tab.window.weekly_agenda
+                first, second = [item for item, _button in agenda.entry_buttons]
+                for key, expected in (
+                        (Gdk.KEY_k, first), (Gdk.KEY_j, second),
+                        (Gdk.KEY_j, second), (Gdk.KEY_k, first), (Gdk.KEY_k, first)):
+                    self.assertTrue(tab.window._on_key_pressed(
+                        None, key, 0, Gdk.ModifierType(0)))
+                    self.assertEqual(agenda.selected_item, expected)
+                self.assertEqual(tab.window.stack.get_visible_child_name(), "weekly-agenda")
+                self.assertFalse(agenda._on_key_pressed(
+                    None, Gdk.KEY_j, 0, Gdk.ModifierType.CONTROL_MASK))
+                for key in (Gdk.KEY_space, Gdk.KEY_Return):
+                    with patch.object(self.app, "open_location") as open_location:
+                        self.assertTrue(tab.window._on_key_pressed(
+                            None, key, 0, Gdk.ModifierType(0)))
+                        open_location.assert_called_once_with(path, first.entry.line)
 
     def test_agenda_cursor_navigates_and_keeps_selection_when_cycling_todo(self):
         import datetime as dt
