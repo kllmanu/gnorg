@@ -100,7 +100,7 @@ class AgendaView(Adw.Bin):
                                           tooltip_text="New Tab (Ctrl+T)", action_name="win.new"))
         menu = Gio.Menu()
         menu.append("Preferences", "app.preferences")
-        menu.append("About Organizer", "app.about")
+        menu.append(f"About {GLib.get_application_name()}", "app.about")
         self.header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                             tooltip_text="Main Menu"))
 
@@ -236,7 +236,7 @@ class AgendaView(Adw.Bin):
         self.window.show_files()
 
     def _update_title(self):
-        self.window.set_title(f"{self.name} – Organizer")
+        self.window.set_title(f"{self.name} – {GLib.get_application_name()}")
 
     def toast(self, message):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=4))

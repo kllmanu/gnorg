@@ -1,5 +1,5 @@
 PREFIX ?= $(HOME)/.local
-APP_DIR = $(PREFIX)/share/organizer
+APP_DIR = $(PREFIX)/share/gnorg
 SCHEMA_DIR = $(PREFIX)/share/glib-2.0/schemas
 
 run: schemas
@@ -19,14 +19,14 @@ install:
 	install -Dm644 -t $(APP_DIR)/language-specs data/language-specs/*.lang
 	install -Dm644 -t $(APP_DIR)/styles data/styles/*.xml
 	install -d $(PREFIX)/bin
-	ln -sf $(APP_DIR)/app.py $(PREFIX)/bin/organizer
+	ln -sf $(APP_DIR)/app.py $(PREFIX)/bin/gnorg
 	install -Dm644 data/io.github.kllmanu.Organizer.desktop $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
 	install -Dm644 data/io.github.kllmanu.Organizer.gschema.xml $(SCHEMA_DIR)/io.github.kllmanu.Organizer.gschema.xml
 	glib-compile-schemas $(SCHEMA_DIR)
 
 uninstall:
 	rm -rf $(APP_DIR)
-	rm -f $(PREFIX)/bin/organizer $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
+	rm -f $(PREFIX)/bin/gnorg $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
 	rm -f $(SCHEMA_DIR)/io.github.kllmanu.Organizer.gschema.xml
 	glib-compile-schemas $(SCHEMA_DIR)
 

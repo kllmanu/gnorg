@@ -19,7 +19,7 @@ from indent import OrgFold, OrgIndent  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
-APP_NAME = "Organizer"
+APP_NAME = "GNORG"
 VERSION = "0.2.0"
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -1250,7 +1250,7 @@ class OrganizerApplication(Adw.Application):
             application_name=APP_NAME,
             application_icon="accessories-text-editor",
             version=VERSION,
-            comments="An Org mode editor with Vim keybindings",
+            comments="Gnorg is not org\nAn Org mode editor with Vim keybindings",
             license_type=Gtk.License.GPL_3_0,
         )
         about.present(self.get_active_window())

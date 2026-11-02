@@ -38,6 +38,16 @@ class TabTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertTrue(predicate())
 
+    def test_application_branding(self):
+        tab = self.app.new_tab()
+        self.assertEqual(GLib.get_application_name(), "GNORG")
+        self.assertEqual(tab.window.get_title(), "Untitled – GNORG")
+        with patch("vim.Adw.AboutDialog") as about:
+            self.app._on_about()
+            self.assertEqual(about.call_args.kwargs["application_name"], "GNORG")
+            self.assertIn("Gnorg is not org", about.call_args.kwargs["comments"])
+            about.return_value.present.assert_called_once_with(self.app.get_active_window())
+
     def test_new_and_close_actions_target_selected_tab(self):
         first = self.app.new_tab()
         first.buffer.set_text("* First")
@@ -725,7 +735,7 @@ class TabTests(unittest.TestCase):
                 None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
             self.assertTrue(window._on_key_pressed(None, Gdk.KEY_c, 0, Gdk.ModifierType(0)))
             self.assertIs(window.active_view, window.agenda)
-            self.assertEqual(window.get_title(), "Calendar – Organizer")
+            self.assertEqual(window.get_title(), "Calendar – GNORG")
             self.assertIn("C-c a", window.active_view._org_key_sequences.commands)
         self.assertIn("C-c a", tab._org_key_sequences.commands)
         self.assertIn("C-c C-c", tab._org_key_sequences.commands)
@@ -931,7 +941,7 @@ class TabTests(unittest.TestCase):
         self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_a, 0, Gdk.ModifierType(0)))
         agenda = tab.window.weekly_agenda
         self.assertIs(tab.window.active_view, agenda)
-        self.assertEqual(tab.window.get_title(), "Agenda – Organizer")
+        self.assertEqual(tab.window.get_title(), "Agenda – GNORG")
         start = agenda.start
         saturday = start + dt.timedelta(days=5)
         text = (f"* TODO Scheduled task\nSCHEDULED: <{start.isoformat()} 09:00>\n"

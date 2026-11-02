@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the Organizer application."""
+"""Start GNORG (Gnorg is not org)."""
 
 import sys
 

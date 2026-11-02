@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="organizer" name="Organizer" version="1.0" parent-scheme="Adwaita">
+<style-scheme id="organizer" name="GNORG" version="1.0" parent-scheme="Adwaita">
   <description>Adwaita with Org mode styles</description>
 
   <color name="blue" value="#1a5fb4"/>
