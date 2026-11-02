@@ -89,6 +89,7 @@ class AgendaView(Adw.Bin):
 
         self.title_widget = Adw.WindowTitle(title=self.name)
         self.header = Adw.HeaderBar(title_widget=self.title_widget)
+        self.window.add_sidebar_toggle(self.header)
         self.open_button = Gtk.Button(tooltip_text="Open documents")
         open_content = Gtk.Box(spacing=6)
         open_content.append(Gtk.Label(label="Open"))
@@ -97,7 +98,7 @@ class AgendaView(Adw.Bin):
         self.open_button.connect("clicked", lambda *_: self.app.show_buffers())
         self.header.pack_start(self.open_button)
         self.header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                          tooltip_text="New Tab (Ctrl+T)", action_name="win.new"))
+                                          tooltip_text="New Document", action_name="win.new"))
         menu = Gio.Menu()
         menu.append("Preferences", "app.preferences")
         menu.append(f"About {GLib.get_application_name()}", "app.about")
@@ -229,6 +230,7 @@ class AgendaView(Adw.Bin):
 
     def present(self):
         self.window.stack.set_visible_child_name(self.stack_name)
+        self.window.utility_pane.select_week(self.start)
         self.window.present()
         self.view.grab_focus()
 
@@ -498,10 +500,12 @@ class AgendaView(Adw.Bin):
 
     def shift(self, direction):
         self.start += dt.timedelta(days=7 * direction)
+        self.window.utility_pane.select_week(self.start)
         self.refresh()
 
     def goto_today(self):
         self.start = org.week_start(dt.date.today())
+        self.window.utility_pane.select_week(self.start)
         self.refresh()
 
     def _find_file(self):

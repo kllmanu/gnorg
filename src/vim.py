@@ -17,6 +17,7 @@ from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgFold, OrgIndent  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
+from utilitypane import UtilityPane  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
 APP_NAME = "GNORG"
@@ -141,6 +142,7 @@ class EditorTab(Adw.Bin):
         self.title_widget = Adw.WindowTitle()
         header = Adw.HeaderBar(title_widget=self.title_widget)
         self.header = header
+        self.window.add_sidebar_toggle(header)
 
         self.open_button = Gtk.Button(label="Open", tooltip_text="Open documents")
         open_content = Gtk.Box(spacing=6)
@@ -150,7 +152,7 @@ class EditorTab(Adw.Bin):
         self.open_button.connect("clicked", lambda *_: self.get_application().show_buffers())
         header.pack_start(self.open_button)
         header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                     tooltip_text="New Tab (Ctrl+T)", action_name="win.new"))
+                                     tooltip_text="New Document", action_name="win.new"))
 
         menu = Gio.Menu()
         file_section = Gio.Menu()
@@ -291,6 +293,7 @@ class EditorTab(Adw.Bin):
             self.page.set_tooltip(short_path(self.path) or name)
         if self.window.active_view is self:
             self.window.set_title(f"{name} – {APP_NAME}")
+        self.get_application().queue_agenda_refresh()
 
     def _update_position(self):
         it = self.buffer.get_iter_at_mark(self.buffer.get_insert())
@@ -739,13 +742,9 @@ class EditorWindow(Adw.ApplicationWindow):
         self.agenda = None
         self.weekly_agenda = None
         self.tabs = Adw.TabView()
-        bar = Adw.TabBar(view=self.tabs, autohide=True)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        box.append(bar)
-        box.append(self.tabs)
         self.tabs.set_vexpand(True)
         self.stack = Adw.ViewStack()
-        self.stack.add_titled_with_icon(box, "files", "Files", "text-x-generic-symbolic")
+        self.stack.add_titled_with_icon(self.tabs, "files", "Files", "text-x-generic-symbolic")
         self.weekly_agenda_container = Adw.Bin()
         self.stack.add_titled_with_icon(
             self.weekly_agenda_container, "weekly-agenda", "Agenda", "view-list-symbolic")
@@ -760,7 +759,16 @@ class EditorWindow(Adw.ApplicationWindow):
         self.toolbar_view.add_bottom_bar(self.switcher_bar)
         self._header = None
         self._title_bindings = []
-        self.set_content(self.toolbar_view)
+        self.split_view = Adw.OverlaySplitView(
+            content=self.toolbar_view, show_sidebar=True,
+            min_sidebar_width=280, max_sidebar_width=320, sidebar_width_fraction=0.3)
+        self.utility_pane = UtilityPane(self)
+        self.split_view.set_sidebar(self.utility_pane)
+        self.set_content(self.split_view)
+        breakpoint = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 850px"))
+        breakpoint.add_setter(self.split_view, "collapsed", True)
+        breakpoint.add_setter(self.split_view, "show-sidebar", False)
+        self.add_breakpoint(breakpoint)
         self.tabs.connect("notify::selected-page", self._on_selected)
         self.stack.connect("notify::visible-child", self._on_view_changed)
         self.tabs.connect("close-page", self._on_close_page)
@@ -768,24 +776,26 @@ class EditorWindow(Adw.ApplicationWindow):
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._on_key_pressed)
         self.add_controller(keys)
+        self.utility_pane.refresh()
+
+    def add_sidebar_toggle(self, header):
+        button = Gtk.ToggleButton(icon_name="sidebar-show-symbolic",
+                                  tooltip_text="Toggle utility pane")
+        self.split_view.bind_property(
+            "show-sidebar", button, "active",
+            GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.BIDIRECTIONAL)
+        header.pack_start(button)
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
         modifiers = state & Gtk.accelerator_get_default_mod_mask()
         if modifiers == Gdk.ModifierType.ALT_MASK:
-            if keyval == Gdk.KEY_o:
+            if keyval in (Gdk.KEY_h, Gdk.KEY_l):
                 pages = self.stack.get_pages()
                 current = next(i for i in range(pages.get_n_items())
                                if pages.get_item(i).get_child() is self.stack.get_visible_child())
-                page = pages.get_item((current + 1) % pages.get_n_items())
+                direction = -1 if keyval == Gdk.KEY_h else 1
+                page = pages.get_item((current + direction) % pages.get_n_items())
                 self.stack.set_visible_child(page.get_child())
-                return True
-            if (keyval in (Gdk.KEY_h, Gdk.KEY_l)
-                    and self.stack.get_visible_child_name() == "files"):
-                page = self.tabs.get_selected_page()
-                if page is not None:
-                    direction = -1 if keyval == Gdk.KEY_h else 1
-                    index = (self.tabs.get_page_position(page) + direction) % self.tabs.get_n_pages()
-                    self.tabs.set_selected_page(self.tabs.get_nth_page(index))
                 return True
         tab = self.active_view
         if tab is None:
@@ -882,6 +892,7 @@ class EditorWindow(Adw.ApplicationWindow):
             self.add_action(tab.actions.lookup_action(name))
         tab._update_title()
         tab.view.grab_focus()
+        self.utility_pane.refresh()
 
     def _on_close_page(self, _tabs, page):
         def finish(confirmed):
@@ -891,6 +902,7 @@ class EditorWindow(Adw.ApplicationWindow):
                 self._closed_tabs.append(
                     (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
             self.tabs.close_page_finish(page, confirmed)
+            self.get_application().queue_agenda_refresh()
             if (not self.tabs.get_n_pages() and not self._closing
                     and self.stack.get_visible_child_name() == "files"):
                 self._force_close = True
@@ -919,6 +931,7 @@ class OrganizerApplication(Adw.Application):
         self._quitting = False
         self._session_restored = False
         self.recent_files = []
+        self.hidden_agenda_files = set()
         self.connect("window-removed", self._on_window_removed)
 
     def _on_window_removed(self, _app, window):
@@ -935,6 +948,7 @@ class OrganizerApplication(Adw.Application):
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
             self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
+            self.hidden_agenda_files = set(self.settings.get_strv("hidden-agenda-files"))
 
         language_specs = data_path("language-specs")
         if language_specs:
@@ -969,8 +983,6 @@ class OrganizerApplication(Adw.Application):
         self.set_zoom(self.settings.get_int("zoom") if self.settings else 100, notify=False)
 
         self.set_accels_for_action("app.quit", ["<Ctrl>q"])
-        self.set_accels_for_action("win.new", ["<Ctrl>t"])
-        self.set_accels_for_action("win.reopen", ["<Ctrl><Shift>t"])
         self.set_accels_for_action("win.open", ["<Ctrl>o"])
         self.set_accels_for_action("win.save", ["<Ctrl>s"])
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
@@ -1059,11 +1071,13 @@ class OrganizerApplication(Adw.Application):
         return os.path.abspath(os.path.expanduser(directory or DEFAULT_AGENDA_DIRECTORY))
 
     def agenda_entries(self):
-        """All entries of the .org files in the agenda folder; unsaved buffers win over disk."""
+        """Visible folder and open Org sources; unsaved buffers win over disk."""
         directory = self.agenda_directory()
-        files = org.find_org_files(directory) if os.path.isdir(directory) else []
+        files = self.agenda_files()
         entries = []
         for path in files:
+            if not self.agenda_file_visible(path):
+                continue
             win = self.window_for_path(path)
             if win:
                 text = win.get_text()
@@ -1075,6 +1089,29 @@ class OrganizerApplication(Adw.Application):
                     continue
             entries.extend(org.parse_entries(text, path))
         return directory, files, entries
+
+    def agenda_files(self):
+        directory = self.agenda_directory()
+        files = org.find_org_files(directory) if os.path.isdir(directory) else []
+        seen = {os.path.realpath(path) for path in files}
+        for tab in self.editor_tabs():
+            if tab.path and tab.path.endswith(".org") and os.path.realpath(tab.path) not in seen:
+                files.append(tab.path)
+                seen.add(os.path.realpath(tab.path))
+        return files
+
+    def agenda_file_visible(self, path):
+        return Gio.File.new_for_path(os.path.realpath(path)).get_uri() not in self.hidden_agenda_files
+
+    def set_agenda_file_visible(self, path, visible):
+        uri = Gio.File.new_for_path(os.path.realpath(path)).get_uri()
+        if visible:
+            self.hidden_agenda_files.discard(uri)
+        else:
+            self.hidden_agenda_files.add(uri)
+        if self.settings:
+            self.settings.set_strv("hidden-agenda-files", sorted(self.hidden_agenda_files))
+        self.queue_agenda_refresh()
 
     def open_location(self, path, line):
         self.open_file(Gio.File.new_for_path(path), lambda win: win.goto_line(line))
@@ -1136,13 +1173,13 @@ class OrganizerApplication(Adw.Application):
         window.weekly_agenda.present()
 
     def queue_agenda_refresh(self):
-        if (not any(window.agenda or window.weekly_agenda for window in self.editor_windows())
-                or self._agenda_refresh_id):
+        if self._agenda_refresh_id:
             return
 
         def refresh():
             self._agenda_refresh_id = 0
             for window in self.editor_windows():
+                window.utility_pane.refresh()
                 if window.agenda is not None:
                     window.agenda.refresh()
                 if window.weekly_agenda is not None:
@@ -1180,7 +1217,8 @@ class OrganizerApplication(Adw.Application):
         group = Adw.PreferencesGroup(
             title="Calendar",
             description="Active timestamps in these .org files appear in the calendar. "
-                        "Agenda also includes scheduled entries and deadlines.")
+                        "Open Org files are also available. Check files in the utility pane "
+                        "to show them in Calendar and Agenda.")
         row = Adw.ActionRow(title="Calendar Folder", subtitle=short_path(self.agenda_directory()))
         choose = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
                             tooltip_text="Choose Folder", css_classes=["flat"])
@@ -1208,6 +1246,7 @@ class OrganizerApplication(Adw.Application):
             if self.settings:
                 self.settings.set_string("agenda-directory", short_path(path))
             row.set_subtitle(short_path(path))
+            self.queue_agenda_refresh()
             for window in self.editor_windows():
                 if window.agenda is not None:
                     window.agenda.refresh(keep_scroll=False)

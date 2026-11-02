@@ -14,7 +14,7 @@ data/gschemas.compiled: data/io.github.kllmanu.Organizer.gschema.xml
 	glib-compile-schemas --strict data
 
 install:
-	install -Dm644 -t $(APP_DIR) src/vim.py src/org.py src/agenda.py src/datepicker.py src/keybindings.py src/indent.py src/bufferpicker.py
+	install -Dm644 -t $(APP_DIR) src/vim.py src/org.py src/agenda.py src/datepicker.py src/keybindings.py src/indent.py src/bufferpicker.py src/utilitypane.py
 	install -Dm755 src/app.py $(APP_DIR)/app.py
 	install -Dm644 -t $(APP_DIR)/language-specs data/language-specs/*.lang
 	install -Dm644 -t $(APP_DIR)/styles data/styles/*.xml

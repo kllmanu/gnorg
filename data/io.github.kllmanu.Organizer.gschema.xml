@@ -44,7 +44,12 @@
     <key name="agenda-directory" type="s">
       <default>'~/org'</default>
       <summary>Calendar folder</summary>
-      <description>Folder whose .org files (including subfolders) provide active timestamps for Calendar and dated entries for the seven-day Agenda list. Calendar excludes scheduled entries and deadlines; Agenda includes them without a global TODO list. A leading ~ is expanded to the home folder.</description>
+      <description>Folder whose .org files (including subfolders), together with open Org documents, are listed below the utility pane calendar. Click a file to edit it; check it to include its entries in Calendar and Agenda. Calendar excludes scheduled entries and deadlines; Agenda includes them without a global TODO list. A leading ~ is expanded to the home folder.</description>
+    </key>
+    <key name="hidden-agenda-files" type="as">
+      <default>[]</default>
+      <summary>Files hidden from Calendar and Agenda</summary>
+      <description>Canonical file URIs unchecked in the utility pane. Hidden files remain available in the editor, and visibility choices persist across sessions.</description>
     </key>
     <key name="hide-weekends" type="b">
       <default>true</default>

@@ -24,6 +24,7 @@ class TabTests(unittest.TestCase):
 
     def setUp(self):
         self.app.recent_files = []
+        self.app.hidden_agenda_files = set()
         self.addCleanup(self.cleanup_windows)
 
     def cleanup_windows(self):
@@ -62,7 +63,194 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
 
-    def test_alt_navigation_wraps_tabs_and_cycles_views_without_changing_hidden_tabs(self):
+    def test_utility_pane_replaces_tab_bar_and_selects_documents(self):
+        first = self.app.new_tab()
+        first.buffer.set_text("* First")
+        second = self.app.new_tab()
+        window = first.window
+        pane = window.utility_pane
+        self.assertIs(window.split_view.get_sidebar(), pane)
+        self.assertIs(window.stack.get_child_by_name("files"), window.tabs)
+        pane.refresh()
+        row = next(row for row in pane.rows if row.document is first)
+        self.assertEqual(row.get_title(), "• Untitled")
+        self.assertIsNone(row.visibility)
+        self.app.show_agenda(window)
+        pane.listbox.emit("row-activated", row)
+        self.assertIs(window.active_tab, first)
+        self.assertEqual(window.stack.get_visible_child_name(), "files")
+        self.assertEqual(first.get_text(), "* First")
+        self.assertIn(second, window.documents())
+
+    def test_utility_sources_toggle_both_views_without_closing_or_modifying_files(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "events.org")
+            text = f"* Event <{dt.date.today().isoformat()}>\n"
+            with open(path, "w") as stream:
+                stream.write(text)
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                window = tab.window
+                pane = window.utility_pane
+                pane.refresh()
+                row = next(row for row in pane.rows if row.file and row.file.get_path() == path)
+                self.assertIsNone(row.document)
+                self.assertTrue(row.visibility.get_active())
+                pane.listbox.emit("row-activated", row)
+                self.wait_for(lambda: self.app.window_for_path(path).get_text() == text)
+                document = self.app.window_for_path(path)
+                self.app.show_agenda(window)
+                self.app.show_weekly_agenda(window)
+                self.assertEqual(len(window.agenda.entry_buttons), 1)
+                self.assertEqual(len(window.weekly_agenda.entry_buttons), 1)
+                pane.refresh()
+                row = next(row for row in pane.rows if row.document is document)
+                settings = Mock()
+                with patch.object(self.app, "settings", settings):
+                    row.visibility.set_active(False)
+                    settings.set_strv.assert_called_once_with(
+                        "hidden-agenda-files", [Gio.File.new_for_path(path).get_uri()])
+                self.wait_for(lambda: not window.agenda.entry_buttons
+                              and not window.weekly_agenda.entry_buttons)
+                self.assertFalse(document.buffer.get_modified())
+                self.assertEqual(document.get_text(), text)
+                self.assertIn(document, window.documents())
+                row = next(row for row in pane.rows if row.document is document)
+                self.assertFalse(row.visibility.get_active())
+                row.visibility.set_active(True)
+                self.wait_for(lambda: len(window.agenda.entry_buttons) == 1
+                              and len(window.weekly_agenda.entry_buttons) == 1)
+
+    def test_utility_pane_collapses_and_its_header_button_toggles_the_overlay(self):
+        tab = self.app.new_tab()
+        window = tab.window
+        tab.present()
+        window.set_default_size(700, 680)
+        self.wait_for(window.split_view.get_collapsed)
+        self.assertFalse(window.split_view.get_show_sidebar())
+
+        def find_toggle(widget):
+            if widget.get_tooltip_text() == "Toggle utility pane":
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                found = find_toggle(child)
+                if found is not None:
+                    return found
+                child = child.get_next_sibling()
+            return None
+
+        toggle = find_toggle(tab.header)
+        self.assertIsNotNone(toggle)
+        toggle.set_active(True)
+        self.assertTrue(window.split_view.get_show_sidebar())
+        pane = window.utility_pane
+        row = next(row for row in pane.rows if row.document is tab)
+        pane.listbox.emit("row-activated", row)
+        self.assertFalse(window.split_view.get_show_sidebar())
+        self.assertFalse(toggle.get_active())
+        window.set_default_size(960, 680)
+        self.wait_for(lambda: not window.split_view.get_collapsed())
+        self.assertTrue(window.split_view.get_show_sidebar())
+
+    def test_utility_visibility_toggle_preserves_keyboard_focus_and_does_not_open_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "event.org")
+            with open(path, "w") as stream:
+                stream.write("* Event <2026-11-02>\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                tab.present()
+                self.wait_for(tab.view.get_mapped)
+                pane = tab.window.utility_pane
+                pane.refresh()
+                row = next(row for row in pane.rows if row.visibility)
+                row.visibility.grab_focus()
+                row.visibility.activate()
+                self.wait_for(lambda: not next(
+                    row for row in pane.rows if row.visibility).visibility.get_active())
+                pane.refresh()
+                row = next(row for row in pane.rows if row.visibility)
+                self.assertIs(tab.window.get_focus(), row.visibility)
+                self.assertIsNone(self.app.window_for_path(path))
+                self.assertIs(tab.window.active_tab, tab)
+
+    def test_open_org_sources_outside_folder_are_deduplicated_and_follow_unsaved_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = os.path.join(directory, "calendar")
+            os.mkdir(folder)
+            path = os.path.join(directory, "outside.org")
+            with open(path, "w") as stream:
+                stream.write("* Disk <2026-11-02>\n")
+            with patch.object(self.app, "agenda_directory", return_value=folder):
+                tab = self.app.open_file(Gio.File.new_for_path(path))
+                self.wait_for(lambda: bool(tab.get_text()))
+                tab.buffer.set_text("* Unsaved <2026-11-03>\n")
+                _, files, entries = self.app.agenda_entries()
+                self.assertEqual(files, [path])
+                self.assertEqual(entries[0].heading_text, "* Unsaved <2026-11-03>")
+                self.app.set_agenda_file_visible(path, False)
+                self.assertEqual(self.app.agenda_entries()[2], [])
+                with patch.object(self.app, "agenda_directory", return_value=directory):
+                    self.assertEqual(self.app.agenda_files(), [path])
+                pane = tab.window.utility_pane
+                pane.refresh()
+                self.assertEqual(len([row for row in pane.rows
+                                      if row.file and row.file.get_path() == path]), 1)
+
+    def test_utility_calendar_navigates_views_and_marks_only_visible_sources(self):
+        import datetime as dt
+        import org
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "event.org")
+            with open(path, "w") as stream:
+                stream.write("* Event <2026-11-17>\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                window = tab.window
+                pane = window.utility_pane
+                pane.calendar.set_date(GLib.DateTime.new_local(2026, 11, 17, 0, 0, 0))
+                self.assertEqual(window.stack.get_visible_child_name(), "agenda")
+                self.assertEqual(window.agenda.start, org.week_start(dt.date(2026, 11, 17)))
+                self.assertEqual(pane.calendar.get_date().get_day_of_month(), 17)
+                pane.update_marks()
+                self.assertTrue(pane.calendar.get_day_is_marked(17))
+                self.app.set_agenda_file_visible(path, False)
+                pane.update_marks()
+                self.assertFalse(pane.calendar.get_day_is_marked(17))
+                self.app.show_weekly_agenda(window)
+                pane.calendar.set_date(GLib.DateTime.new_local(2026, 12, 9, 0, 0, 0))
+                self.assertEqual(window.stack.get_visible_child_name(), "weekly-agenda")
+                self.assertEqual(window.weekly_agenda.start, org.week_start(dt.date(2026, 12, 9)))
+                window.weekly_agenda.shift(1)
+                selected = pane.calendar.get_date()
+                date = dt.date(selected.get_year(), selected.get_month(),
+                               selected.get_day_of_month())
+                self.assertEqual(org.week_start(date), window.weekly_agenda.start)
+                window.agenda.refresh()
+                self.assertEqual(pane.calendar.get_date().get_day_of_month(), date.day)
+
+    def test_visibility_choices_are_restored_at_startup(self):
+        directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
+        source = Gio.SettingsSchemaSource.new_from_directory(
+            directory, Gio.SettingsSchemaSource.get_default(), False)
+        schema = source.lookup("io.github.kllmanu.Organizer", False)
+        settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
+        settings.set_strv("hidden-agenda-files", ["file:///org/hidden.org"])
+        with (patch.object(OrganizerApplication, "_load_settings", return_value=settings),
+              patch("vim.data_path", return_value=None)):
+            app = OrganizerApplication()
+            app.set_application_id("io.github.kllmanu.Organizer.VisibilityTests")
+            app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
+            app.register(None)
+        self.addCleanup(app.quit)
+        self.assertFalse(app.agenda_file_visible("/org/hidden.org"))
+        self.assertTrue(app.agenda_file_visible("/org/visible.org"))
+
+    def test_alt_navigation_cycles_views_without_switching_documents(self):
         first = self.app.new_tab()
         second = self.app.new_tab()
         window = first.window
@@ -71,30 +259,36 @@ class TabTests(unittest.TestCase):
         def press(key, modifiers=Gdk.ModifierType.ALT_MASK):
             return window._on_key_pressed(None, key, 0, modifiers)
 
-        self.assertTrue(press(Gdk.KEY_l))
-        self.assertIs(window.active_tab, first)
-        self.assertTrue(press(Gdk.KEY_h))
-        self.assertIs(window.active_tab, second)
-        self.assertTrue(press(Gdk.KEY_h))
-        self.assertIs(window.active_tab, first)
-        self.assertTrue(press(Gdk.KEY_l))
-        self.assertIs(window.active_tab, second)
-        for expected in ("weekly-agenda", "agenda", "files"):
-            self.assertTrue(press(Gdk.KEY_o))
-            self.assertEqual(window.stack.get_visible_child_name(), expected)
-            if expected != "files":
-                self.assertFalse(press(Gdk.KEY_h))
-                self.assertFalse(press(Gdk.KEY_l))
+        for key, expected_views in (
+                (Gdk.KEY_l, ("weekly-agenda", "agenda", "files")),
+                (Gdk.KEY_h, ("agenda", "weekly-agenda", "files"))):
+            for expected in expected_views:
+                self.assertTrue(press(key))
                 self.assertEqual(window.stack.get_visible_child_name(), expected)
                 self.assertIs(window.active_tab, second)
         self.assertIs(window.active_view, second)
-        self.assertFalse(press(Gdk.KEY_o, Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.CONTROL_MASK))
-
-    def test_alt_navigation_with_single_tab(self):
-        tab = self.app.new_tab()
+        self.assertIn(first, window.documents())
+        self.assertFalse(press(Gdk.KEY_o))
         for key in (Gdk.KEY_h, Gdk.KEY_l):
+            self.assertFalse(press(
+                key, Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.CONTROL_MASK))
+        self.assertEqual(window.stack.get_visible_child_name(), "files")
+
+    def test_alt_navigation_cycles_views_with_single_document(self):
+        tab = self.app.new_tab()
+        for key, expected in ((Gdk.KEY_h, "agenda"), (Gdk.KEY_l, "files")):
             self.assertTrue(tab.window._on_key_pressed(None, key, 0, Gdk.ModifierType.ALT_MASK))
+            self.assertEqual(tab.window.stack.get_visible_child_name(), expected)
             self.assertIs(tab.window.active_tab, tab)
+
+    def test_tab_creation_and_reopening_have_no_keyboard_accelerators(self):
+        self.assertEqual(self.app.get_accels_for_action("win.new"), [])
+        self.assertEqual(self.app.get_accels_for_action("win.reopen"), [])
+        for shortcut in ("<Control>t", "<Control><Shift>t"):
+            self.assertEqual(self.app.get_actions_for_accel(shortcut), [])
+        self.assertEqual(self.app.get_accels_for_action("win.open"), ["<Control>o"])
+        self.assertEqual(self.app.get_accels_for_action("win.save"), ["<Control>s"])
+        self.assertEqual(self.app.get_accels_for_action("win.close"), ["<Control>w"])
 
     def test_heading_cycle_and_startup_visibility(self):
         text = "* Parent\nBody\n** Child\nChild body\n*** Grandchild\nDetails\n* Next\nTail"
@@ -517,7 +711,7 @@ class TabTests(unittest.TestCase):
         self.assertEqual(agenda.window.stack.get_visible_child_name(), "agenda")
         self.assertIs(agenda.window.view_switcher.get_stack(), agenda.window.stack)
         self.wait_for(lambda: not tab.get_mapped())
-        self.assertFalse(tab.window.tabs.get_parent().get_mapped())
+        self.assertFalse(tab.window.tabs.get_mapped())
         self.assertEqual(len(agenda.days), 7)
         self.assertEqual(len(self.app.editor_tabs()), 1)
         self.assertIsNone(agenda.window.lookup_action("save"))
@@ -1180,6 +1374,7 @@ class TabTests(unittest.TestCase):
             self.wait_for(lambda: all(tab.get_text() for tab in self.app.editor_tabs()))
             self.app.new_tab()
             settings = Mock()
+            settings.get_string.return_value = ""
             settings.get_int.side_effect = lambda key: {"window-width": 960, "window-height": 680}[key]
             settings.get_boolean.return_value = False
             uris = [file.get_uri() for file in files]
@@ -1199,6 +1394,7 @@ class TabTests(unittest.TestCase):
         tab = self.app.new_tab()
         tab.buffer.set_text("* Unsaved")
         settings = Mock()
+        settings.get_string.return_value = ""
         with patch.object(self.app, "settings", settings):
             self.app._on_quit()
             tab.window.get_visible_dialog().emit("response", "cancel")
