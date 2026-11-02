@@ -125,6 +125,7 @@ class TabTests(unittest.TestCase):
 
     def test_utility_pane_collapses_and_its_header_button_toggles_the_overlay(self):
         tab = self.app.new_tab()
+        tab.buffer.set_text("* Draft")
         window = tab.window
         tab.present()
         window.set_default_size(700, 680)
@@ -154,6 +155,26 @@ class TabTests(unittest.TestCase):
         window.set_default_size(960, 680)
         self.wait_for(lambda: not window.split_view.get_collapsed())
         self.assertTrue(window.split_view.get_show_sidebar())
+
+    def test_utility_pane_hides_empty_untitled_documents_but_keeps_drafts_and_named_files(self):
+        tab = self.app.new_tab()
+        pane = tab.window.utility_pane
+        with patch.object(self.app, "agenda_files", return_value=[]):
+            pane.refresh()
+            self.assertEqual(pane.rows, [])
+            self.assertTrue(pane.empty.get_visible())
+            tab.buffer.set_text("* Draft")
+            self.wait_for(lambda: any(row.document is tab for row in pane.rows))
+            self.assertFalse(pane.empty.get_visible())
+            tab.buffer.set_text("")
+            self.assertTrue(tab.buffer.get_modified())
+            self.wait_for(lambda: not pane.rows)
+            self.assertIn(tab, tab.window.documents())
+            tab._set_file(Gio.File.new_for_path("/org/empty.org"), "")
+            pane.refresh()
+            self.assertEqual(len(pane.rows), 1)
+            self.assertIs(pane.rows[0].document, tab)
+            self.assertEqual(pane.rows[0].get_title(), "empty.org")
 
     def test_utility_visibility_toggle_preserves_keyboard_focus_and_does_not_open_file(self):
         with tempfile.TemporaryDirectory() as directory:

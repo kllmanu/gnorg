@@ -62,6 +62,8 @@ class UtilityPane(Adw.Bin):
             items.append((Gio.File.new_for_path(path), tab, True))
             seen.add(os.path.realpath(path))
         for tab in documents:
+            if tab.file is None and tab.buffer.get_char_count() == 0:
+                continue
             if tab.path and os.path.realpath(tab.path) in seen:
                 continue
             items.append((tab.file, tab, False))
