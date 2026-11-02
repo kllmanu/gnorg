@@ -1,6 +1,7 @@
-"""Popover for picking an org timestamp: free-form text input plus a calendar."""
+"""Org date picker with free-form input, calendar, and optional start/end times."""
 
 import datetime as dt
+from dataclasses import replace
 
 import gi
 
@@ -39,6 +40,19 @@ class DatePopover(Gtk.Popover):
         self.calendar = Gtk.Calendar()
         self.calendar.connect("day-selected", self._on_day_selected)
         box.append(self.calendar)
+
+        self.time_enabled = Gtk.CheckButton(label="Time")
+        box.append(self.time_enabled)
+        self.time_controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.start_hour, self.start_minute = self._time_row(self.time_controls, "Start")
+        self.end_enabled = Gtk.CheckButton(label="End time")
+        self.time_controls.append(self.end_enabled)
+        self.end_controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.end_hour, self.end_minute = self._time_row(self.end_controls, "End")
+        self.time_controls.append(self.end_controls)
+        box.append(self.time_controls)
+        self.time_enabled.connect("toggled", self._on_time_changed)
+        self.end_enabled.connect("toggled", self._on_time_changed)
 
         buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
         if initial and allow_remove:
@@ -82,6 +96,8 @@ class DatePopover(Gtk.Popover):
             self.preview.set_label("Can’t understand this date")
             self.preview.set_css_classes(["caption", "error"])
             self.set_button.set_sensitive(False)
+            self.time_enabled.set_sensitive(False)
+            self.time_controls.set_sensitive(False)
             return
         self.preview.set_label(self.timestamp.describe(self.today))
         self.preview.set_css_classes(["caption", "dim-label"])
@@ -89,7 +105,50 @@ class DatePopover(Gtk.Popover):
         d = self.timestamp.date
         self._syncing = True
         self.calendar.set_date(GLib.DateTime.new_local(d.year, d.month, d.day, 0, 0, 0))
+        self.time_enabled.set_sensitive(True)
+        self.time_enabled.set_active(self.timestamp.time is not None)
+        self.end_enabled.set_active(self.timestamp.end_time is not None)
+        for value, hour, minute in (
+                (self.timestamp.time, self.start_hour, self.start_minute),
+                (self.timestamp.end_time, self.end_hour, self.end_minute)):
+            if value is not None:
+                hour.set_value(value.hour)
+                minute.set_value(value.minute)
+        self.time_controls.set_visible(self.timestamp.time is not None)
+        self.time_controls.set_sensitive(True)
+        self.end_controls.set_visible(self.timestamp.end_time is not None)
         self._syncing = False
+
+    def _time_row(self, parent, title):
+        row = Gtk.Box(spacing=6)
+        row.append(Gtk.Label(label=title, xalign=0, hexpand=True))
+        spins = []
+        for name, maximum in (("hour", 23), ("minute", 59)):
+            spin = Gtk.SpinButton.new_with_range(0, maximum, 1)
+            spin.set_numeric(True)
+            spin.set_wrap(True)
+            spin.set_width_chars(2)
+            if name == "hour":
+                spin.set_value(9 if title == "Start" else 10)
+            spin.update_property([Gtk.AccessibleProperty.LABEL], [f"{title} {name}"])
+            spin.connect("value-changed", self._on_time_changed)
+            if spins:
+                row.append(Gtk.Label(label=":"))
+            row.append(spin)
+            spins.append(spin)
+        parent.append(row)
+        return tuple(spins)
+
+    def _on_time_changed(self, *_):
+        if self._syncing or self.timestamp is None:
+            return
+        time = end_time = None
+        if self.time_enabled.get_active():
+            time = dt.time(self.start_hour.get_value_as_int(), self.start_minute.get_value_as_int())
+            if self.end_enabled.get_active():
+                end_time = dt.time(self.end_hour.get_value_as_int(), self.end_minute.get_value_as_int())
+        timestamp = replace(self.timestamp, time=time, end_time=end_time)
+        self.entry.set_text(timestamp.format(brackets=False, day_name=False))
 
     def _on_day_selected(self, calendar):
         if self._syncing:
