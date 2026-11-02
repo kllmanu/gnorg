@@ -1067,6 +1067,29 @@ class TabTests(unittest.TestCase):
                     self.assertEqual(weight, Pango.Weight.BOLD)
                 self.assertNotEqual(colors["TODO"], colors["DONE"])
 
+    def test_agenda_highlights_today_and_updates_now_marker(self):
+        import datetime as dt
+
+        self.app.show_weekly_agenda()
+        agenda = self.app.editor_windows()[0].weekly_agenda
+        highlighted = []
+        row = agenda.listbox.get_first_child()
+        while row is not None:
+            if row.has_css_class("agenda-today"):
+                highlighted.append(row)
+            row = row.get_next_sibling()
+        self.assertEqual(len(highlighted), 1)
+        self.assertEqual(len([line for line in agenda.lines if line.kind == "time-grid"]), 7)
+        self.assertEqual(len([line for line in agenda.lines if line.kind == "now"]), 1)
+        with patch.object(agenda, "refresh") as refresh:
+            self.assertTrue(agenda._refresh_clock())
+            refresh.assert_called_once_with()
+        agenda.shift(1)
+        self.assertFalse(any(line.kind == "now" for line in agenda.lines))
+        agenda.goto_today()
+        now = next(line for line in agenda.lines if line.kind == "now")
+        self.assertIn(f"{dt.datetime.now().hour:2d}:", now.text)
+
     def test_weekly_agenda_font_size_matches_editor_at_shared_zoom_levels(self):
         import datetime as dt
         import org

@@ -168,6 +168,8 @@ class AgendaView(Adw.Bin):
             .organizer-agenda button.agenda-cursor {
                 background: alpha(@accent_bg_color, 0.18);
                 box-shadow: inset 3px 0 @accent_bg_color; }
+            .organizer-agenda row.agenda-today {
+                background: alpha(@accent_bg_color, 0.12); }
         """)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -203,12 +205,24 @@ class AgendaView(Adw.Bin):
             style_manager = Adw.StyleManager.get_default()
             dark_handler = style_manager.connect("notify::dark", lambda *_: self.refresh())
             self.connect("destroy", lambda *_: style_manager.disconnect(dark_handler))
+            self._clock_id = GLib.timeout_add_seconds(30, self._refresh_clock)
+            self.connect("destroy", self._stop_clock)
         if not weekly:
             GLib.idle_add(self._scroll_morning)
 
     def _scroll_morning(self):
         self.scroller.get_vadjustment().set_value(8 * 60)
         return GLib.SOURCE_REMOVE
+
+    def _refresh_clock(self):
+        if self.window.active_view is self:
+            self.refresh()
+        return GLib.SOURCE_CONTINUE
+
+    def _stop_clock(self, *_):
+        if self._clock_id:
+            GLib.source_remove(self._clock_id)
+            self._clock_id = 0
 
     def get_application(self):
         return self.app
@@ -323,7 +337,8 @@ class AgendaView(Adw.Bin):
         self.selected_item = None
         selected_button = None
         items = iter(item for day in self.days.values() for item in day)
-        self.lines = org.format_agenda(entries, self.start, 7, today, with_todos=False)
+        self.lines = org.format_agenda(
+            entries, self.start, 7, today, with_todos=False, now=dt.datetime.now().time())
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
                               css_classes=["monospace"], margin_start=12, margin_end=12,
@@ -345,6 +360,8 @@ class AgendaView(Adw.Bin):
                     selected_button = button
             else:
                 row = Gtk.ListBoxRow(child=label, activatable=False, selectable=False)
+                if line.kind == "date" and line.date == today:
+                    row.add_css_class("agenda-today")
                 self.listbox.append(row)
         if self.selected_item is None and self.entry_buttons:
             self.selected_item, selected_button = self.entry_buttons[

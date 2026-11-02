@@ -40,7 +40,7 @@
   <style name="org:agenda-structure" foreground="blue" bold="true"/>
   <style name="org:agenda-date" foreground="blue" bold="true"/>
   <style name="org:agenda-date-weekend" foreground="blue" bold="true"/>
-  <style name="org:agenda-date-today" foreground="blue" bold="true" italic="true" underline="single"/>
+  <style name="org:agenda-date-today" foreground="blue" bold="true" italic="true"/>
   <style name="org:agenda-separator" foreground="grey"/>
   <style name="org:agenda-done" foreground="grey"/>
   <style name="org:scheduled" foreground="green"/>

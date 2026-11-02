@@ -39,6 +39,35 @@ class ShiftTimestampTests(unittest.TestCase):
             self.assertIsNone(org.shift_timestamp(text, 3, 1))
 
 
+class AgendaTimeGridTests(unittest.TestCase):
+    def test_today_grid_and_now_are_chronological_without_global_todos(self):
+        entries = org.parse_entries(
+            "* Meeting\n<2026-10-31 Sat 11:30-13:05>\n"
+            "* TODO Upcoming\nDEADLINE: <2026-11-02 Mon>\n")
+        lines = org.format_agenda(entries, org.week_start(TODAY), 7, TODAY,
+                                  with_todos=False, now=dt.time(11, 45))
+        grid = [line for line in lines if line.kind == "time-grid"]
+        self.assertEqual(len(grid), 7)
+        self.assertTrue(all(line.date == TODAY for line in grid))
+        self.assertEqual([line.text.strip().split()[0] for line in grid],
+                         ["8:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"])
+        now = next(i for i, line in enumerate(lines) if line.kind == "now")
+        meeting = next(i for i, line in enumerate(lines) if "Meeting" in line.text)
+        noon = next(i for i, line in enumerate(lines)
+                    if line.kind == "time-grid" and "12:00" in line.text)
+        self.assertLess(meeting, now)
+        self.assertLess(now, noon)
+        self.assertIn("11:45", lines[now].text)
+        self.assertIn("← now", lines[now].text)
+        self.assertEqual(lines[now].spans, [])
+        self.assertFalse(any("Global list" in line.text for line in lines))
+
+    def test_other_weeks_have_no_grid_or_now_marker(self):
+        lines = org.format_agenda([], TODAY + dt.timedelta(days=7), 7, TODAY,
+                                  with_todos=False, now=dt.time(9))
+        self.assertFalse(any(line.kind in ("time-grid", "now") for line in lines))
+
+
 class NewItemTests(unittest.TestCase):
     def test_indent_layout(self):
         lines = ["preamble", "* Heading", "body", "** Child", "- item",
