@@ -34,6 +34,17 @@ DRAWER_START_RE = re.compile(r"^[ \t]*:[\w-]+:[ \t]*$")
 DRAWER_END_RE = re.compile(r"^[ \t]*:END:[ \t]*$", re.IGNORECASE)
 BLOCK_START_RE = re.compile(r"^[ \t]*#\+BEGIN_", re.IGNORECASE)
 BLOCK_END_RE = re.compile(r"^[ \t]*#\+END_", re.IGNORECASE)
+STARTUP_RE = re.compile(r"^([ \t]*#\+STARTUP:[ \t]*)(.*)$", re.IGNORECASE)
+STARTUP_MODES = ("overview", "content", "showall", "showeverything")
+
+
+def set_startup_mode(line, mode):
+    """Replace folding options while retaining unrelated STARTUP settings."""
+    match = STARTUP_RE.match(line)
+    if match is None or mode not in STARTUP_MODES:
+        raise ValueError("Invalid STARTUP line or folding mode")
+    options = [word for word in match[2].split() if word.lower() not in STARTUP_MODES]
+    return match[1] + " ".join([mode, *options])
 
 def indent_layout(lines):
     """Yield (visual indent columns, hidden heading stars) without changing text."""

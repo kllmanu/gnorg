@@ -17,7 +17,7 @@ import org  # noqa: E402
 from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
-from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgTagAlign, OrgTodoInteraction  # noqa: E402
+from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgStartupEdit, OrgTagAlign, OrgTodoInteraction  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
@@ -86,6 +86,7 @@ class EditorTab(Adw.Bin):
         self._zoom_toast = None
         self._active_date_popover = None
         self._active_tag_popover = None
+        self._active_startup_popover = None
         self._file_monitor = None
         self._revert_timeout = 0
         self._revert_generation = 0
@@ -124,6 +125,7 @@ class EditorTab(Adw.Bin):
         self.org_fold = OrgFold(self.view)
         self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
+        self.org_startup_edit = OrgStartupEdit(self.view, self.edit_startup)
         self.org_todo_interaction = OrgTodoInteraction(
             self.view, self._cycle_todo_at_line, self._toggle_checkbox_at_line,
             self.org_fold.toggle, self._edit_timestamp_at_offset)
@@ -393,11 +395,81 @@ class EditorTab(Adw.Bin):
     # ---------- Org commands ----------
 
     def confirm_org_item(self):
-        text = self.get_text().split("\n")[self._cursor_line()]
-        if org.parse_heading(text) is not None:
+        line = self._cursor_line()
+        text = self.get_text().split("\n")[line]
+        if org.STARTUP_RE.match(text):
+            self.edit_startup(line, self.org_startup_edit.buttons.get(line))
+        elif org.parse_heading(text) is not None:
             self.edit_tags()
         else:
             self.toggle_checkbox()
+
+    def edit_startup(self, line, button):
+        if self._active_startup_popover is not None:
+            self._active_startup_popover.popdown()
+            return
+        original = self.get_text().split("\n")[line]
+        match = org.STARTUP_RE.match(original)
+        if match is None:
+            self.toast("The STARTUP option has changed")
+            return
+        modes = [word.lower() for word in match[2].split()
+                 if word.lower() in org.STARTUP_MODES]
+        dropdown = Gtk.DropDown.new_from_strings(list(org.STARTUP_MODES))
+        dropdown.set_selected(org.STARTUP_MODES.index(modes[-1] if modes else "showall"))
+        dropdown.update_property([Gtk.AccessibleProperty.LABEL], ["Startup folding mode"])
+        popover = Gtk.Popover(position=Gtk.PositionType.BOTTOM)
+        self._active_startup_popover = popover
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
+                      margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
+        box.append(Gtk.Label(label="Startup Folding", xalign=0, css_classes=["heading"]))
+        box.append(dropdown)
+        buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="_Cancel", use_underline=True)
+        cancel.connect("clicked", lambda *_: popover.popdown())
+        apply = Gtk.Button(label="_Apply", use_underline=True,
+                           css_classes=["suggested-action"])
+        buttons.append(cancel)
+        buttons.append(apply)
+        box.append(buttons)
+        popover.set_child(box)
+        popover.set_parent(self.editor_box)
+        anchor = self._cursor_rect()
+        if button is not None:
+            _ok, bounds = button.compute_bounds(self.editor_box)
+            anchor.x, anchor.y = int(bounds.get_x()), int(bounds.get_y())
+            anchor.width, anchor.height = max(button.get_width(), 1), max(button.get_height(), 1)
+        popover.set_pointing_to(anchor)
+        mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
+
+        def on_apply(*_):
+            idx = self.buffer.get_iter_at_mark(mark).get_line()
+            current = self.get_text().split("\n")[idx]
+            if current != original:
+                self.toast("The STARTUP option has changed. Open the editor again.")
+                popover.popdown()
+                return
+            updated = org.set_startup_mode(
+                current, org.STARTUP_MODES[dropdown.get_selected()])
+            if updated != current:
+                self.apply_edit((idx, idx + 1, [updated]))
+            popover.popdown()
+
+        def on_closed(p):
+            self.buffer.delete_mark(mark)
+            self._active_startup_popover = None
+            self.view.grab_focus()
+            GLib.idle_add(lambda: p.unparent() and False)
+
+        apply.connect("clicked", on_apply)
+        popover.connect("closed", on_closed)
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", lambda _c, key, _code, state:
+                     (popover.popdown() or True) if key == Gdk.KEY_Escape or (
+                         key == Gdk.KEY_g and state & Gdk.ModifierType.CONTROL_MASK) else False)
+        popover.add_controller(keys)
+        popover.popup()
+        dropdown.grab_focus()
 
     def _edit_tags_at_line(self, line):
         self.buffer.place_cursor(self.buffer.get_iter_at_line(line)[1])
@@ -677,6 +749,8 @@ class EditorTab(Adw.Bin):
         popover.popup()
 
     def _keyboard_quit(self):
+        if self._active_startup_popover is not None:
+            self._active_startup_popover.popdown()
         if self._active_tag_popover is not None:
             self._active_tag_popover.popdown()
         if self._active_date_popover is not None:
