@@ -389,6 +389,9 @@ class OrgTagAlign:
         motion.connect("motion", self._on_motion)
         motion.connect("leave", self._on_leave)
         view.add_controller(motion)
+        click = Gtk.GestureClick(button=1, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        click.connect("pressed", self._on_tag_pressed)
+        view.add_controller(click)
         css = Gtk.CssProvider()
         css.load_from_string(
             ".tag-edit-button { padding: 0; min-width: 24px; min-height: 24px; }")
@@ -489,6 +492,13 @@ class OrgTagAlign:
     def _on_leave(self, *_):
         self._pointer = None
         self._update_hover()
+
+    def _on_tag_pressed(self, gesture, _n_press, x, y):
+        for line, (left, top, right, bottom) in self._hover_regions.items():
+            if left <= x < right and top <= y < bottom:
+                gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+                self.edit_tags(line)
+                return
 
     def _update_hover(self):
         hovered = None

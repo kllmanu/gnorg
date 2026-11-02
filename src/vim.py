@@ -433,7 +433,17 @@ class EditorTab(Adw.Bin):
         box.append(buttons)
         popover.set_child(box)
         popover.set_parent(self.editor_box)
-        popover.set_pointing_to(self._cursor_rect())
+        anchor = self._cursor_rect()
+        if match := org.TAGS_RE.search(heading.rstrip()):
+            iterator = self.buffer.get_iter_at_line_offset(line, match.start(1))[1]
+            location = self.view.get_iter_location(iterator)
+            x, y = self.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, location.x, location.y)
+            _ok, point = self.view.compute_point(
+                self.editor_box, Graphene.Point().init(x, y))
+            anchor.x, anchor.y = int(point.x), int(point.y)
+            anchor.width, anchor.height = max(location.width, 1), location.height
+        popover.set_pointing_to(anchor)
 
         def validate(*_):
             try:

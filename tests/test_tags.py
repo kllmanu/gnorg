@@ -1,9 +1,9 @@
 """Tags integration tests."""
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from editor_test_case import EditorTestCase
-from vim import Gdk, Gtk
+from vim import Gdk, Graphene, Gtk
 
 
 class TagTests(EditorTestCase):
@@ -109,6 +109,48 @@ class TagTests(EditorTestCase):
         self.assertEqual(tab.get_text(), text)
         tab.buffer.insert(tab.buffer.get_end_iter(), "A genuinely long line " * 100)
         self.wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size())
+
+    def test_keyboard_tag_editor_anchors_to_tags_not_cursor(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Heading :work:\n")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+        self.wait_for(lambda: 0 in tab.org_tag_align._hover_regions
+                      and tab.org_tag_align._hover_regions[0][0] > 100)
+        popover, _entry = self.open_heading_tags(tab)
+        _ok, anchor = popover.get_pointing_to()
+        left, top, _right, _bottom = tab.org_tag_align._hover_regions[0]
+        _ok, point = tab.view.compute_point(
+            tab.editor_box, Graphene.Point().init(left, top))
+        self.assertAlmostEqual(anchor.x, point.x, delta=2)
+        self.assertAlmostEqual(anchor.y, point.y, delta=2)
+        self.assertGreater(anchor.x, tab._cursor_rect().x + 100)
+
+    def test_clicking_tag_text_opens_its_heading_editor(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* First :work:\n* Second :home:\n")
+        tab.present()
+        align = tab.org_tag_align
+        self.wait_for(lambda: 1 in align._hover_regions
+                      and align._hover_regions[1][1] > align._hover_regions[0][1])
+        left, top, right, bottom = align._hover_regions[1]
+        gesture = Mock()
+        align._on_tag_pressed(gesture, 1, left + 1, (top + bottom) / 2)
+        gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+        self.assertIsNotNone(tab._active_tag_popover)
+        entry = tab._active_tag_popover.get_child().get_first_child().get_next_sibling()
+        self.assertEqual(entry.get_text(), "home")
+        _ok, anchor = tab._active_tag_popover.get_pointing_to()
+        _ok, point = tab.view.compute_point(
+            tab.editor_box, Graphene.Point().init(left, top))
+        self.assertAlmostEqual(anchor.x, point.x, delta=2)
+        self.assertAlmostEqual(anchor.y, point.y, delta=2)
+        self.assertGreater(anchor.x, tab._cursor_rect().x + 100)
+        tab._keyboard_quit()
+        gesture.reset_mock()
+        align._on_tag_pressed(gesture, 1, left - 10, (top + bottom) / 2)
+        gesture.set_state.assert_not_called()
+        self.assertIsNone(tab._active_tag_popover)
 
     def test_tag_edit_icon_opens_correct_heading_and_hides_when_folded(self):
         tab = self.app.new_tab()
