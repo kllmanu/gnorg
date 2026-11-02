@@ -56,8 +56,9 @@ class BufferPicker(Gtk.Popover):
 
     def present(self, window):
         self.window = window
-        tab = getattr(window, "active_view", None)
-        self.set_parent(tab.open_button if tab else window.title_widget)
+        anchor = (window.utility_pane.open_button if window.split_view.get_show_sidebar()
+                  else window._header.sidebar_toggle)
+        self.set_parent(anchor)
         self.popup()
         self.search.grab_focus()
 

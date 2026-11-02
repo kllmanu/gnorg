@@ -144,14 +144,6 @@ class EditorTab(Adw.Bin):
         self.header = header
         self.window.add_sidebar_toggle(header)
 
-        self.open_button = Gtk.Button(label="Open", tooltip_text="Open documents")
-        open_content = Gtk.Box(spacing=6)
-        open_content.append(Gtk.Label(label="Open"))
-        open_content.append(Gtk.Image(icon_name="pan-down-symbolic"))
-        self.open_button.set_child(open_content)
-        self.open_button.connect("clicked", lambda *_: self.get_application().show_buffers())
-        header.pack_start(self.open_button)
-
         menu = Gio.Menu()
         file_section = Gio.Menu()
         file_section.append("Save As…", "win.save-as")
@@ -786,6 +778,7 @@ class EditorWindow(Adw.ApplicationWindow):
             "show-sidebar", button, "active",
             GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.BIDIRECTIONAL)
         header.pack_start(button)
+        header.sidebar_toggle = button
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
         modifiers = state & Gtk.accelerator_get_default_mod_mask()

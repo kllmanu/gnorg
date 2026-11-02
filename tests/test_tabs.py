@@ -89,7 +89,8 @@ class TabTests(unittest.TestCase):
         tab = self.app.new_tab()
         window = tab.window
         pane = window.utility_pane
-        self.assertEqual(pane.new_file_button.get_prev_sibling().get_label(), "Files")
+        self.assertIs(pane.new_file_button.get_prev_sibling(), pane.open_button)
+        self.assertEqual(pane.open_button.get_prev_sibling().get_label(), "Files")
         for show in (self.app.show_agenda, self.app.show_weekly_agenda):
             show(window)
             count = len(window.documents())
@@ -1170,17 +1171,28 @@ class TabTests(unittest.TestCase):
         tab.buffer.set_text("* Unsaved")
         self.assertEqual(window.view_switcher.get_title(), tab.title_widget.get_title())
 
-    def test_buffer_picker_in_agenda_uses_visible_header_and_restores_focus(self):
+    def test_buffer_picker_in_agenda_uses_utility_pane_and_restores_focus(self):
         tab = self.app.new_tab()
         tab.present()
         self.app.show_agenda()
         agenda = self.app.agenda
         picker = BufferPicker(self.app.editor_tabs(), tab)
         picker.present(tab.window)
-        self.assertIs(picker.get_parent(), agenda.open_button)
+        self.assertIs(picker.get_parent(), tab.window.utility_pane.open_button)
         picker.close()
         self.wait_for(lambda: picker.get_parent() is None)
         self.assertIs(tab.window.get_focus(), agenda.view)
+
+    def test_buffer_picker_with_hidden_pane_uses_sidebar_toggle(self):
+        tab = self.app.new_tab()
+        tab.present()
+        tab.window.split_view.set_show_sidebar(False)
+        picker = BufferPicker(self.app.editor_tabs(), tab)
+        picker.present(tab.window)
+        self.assertIs(picker.get_parent(), tab.header.sidebar_toggle)
+        picker.close()
+        self.wait_for(lambda: picker.get_parent() is None)
+        self.assertIs(tab.window.get_focus(), tab.view)
 
     def test_calendar_event_duration_and_overlap_lanes(self):
         import datetime as dt
@@ -1647,7 +1659,7 @@ class TabTests(unittest.TestCase):
         self.app.agenda.close()
         self.assertIsNotNone(self.app.agenda)
         self.assertIs(tab.window.get_focus(), tab.view)
-        tab.open_button.grab_focus()
+        tab.window.utility_pane.open_button.grab_focus()
         with patch.object(tab._org_key_sequences, "commands",
                           {**tab._org_key_sequences.commands, "C-x b": Mock()}) as commands:
             self.assertTrue(tab.window._on_key_pressed(

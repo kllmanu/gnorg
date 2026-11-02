@@ -55,6 +55,10 @@ class UtilityPane(Adw.Bin):
                                 margin_top=18, margin_bottom=6)
         files_heading.append(Gtk.Label(label="Files", xalign=0, hexpand=True,
                                        css_classes=["heading"]))
+        self.open_button = Gtk.Button(
+            icon_name="folder-open-symbolic", tooltip_text="Open documents", css_classes=["flat"])
+        self.open_button.connect("clicked", lambda *_: self.app.show_buffers())
+        files_heading.append(self.open_button)
         self.new_file_button = Gtk.Button(
             icon_name="list-add-symbolic", tooltip_text="New Document", css_classes=["flat"])
         self.new_file_button.connect("clicked", self._on_new_file)
