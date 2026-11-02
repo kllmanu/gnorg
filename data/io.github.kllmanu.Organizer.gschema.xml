@@ -25,6 +25,11 @@
       <summary>Files in the previous session</summary>
       <description>Ordered file URIs to reopen at startup. Untitled tabs are not included.</description>
     </key>
+    <key name="session-active-file" type="s">
+      <default>''</default>
+      <summary>Last selected file</summary>
+      <description>File URI selected in the editor before quitting. Reopened and selected at startup, even if an empty Untitled document was selected afterward. Unsaved drafts are not stored.</description>
+    </key>
     <key name="org-indent-mode" type="b">
       <default>true</default>
       <summary>Org indent mode</summary>

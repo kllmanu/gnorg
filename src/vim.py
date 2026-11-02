@@ -293,6 +293,9 @@ class EditorTab(Adw.Bin):
             self.page.set_tooltip(short_path(self.path) or name)
         if self.window.active_view is self:
             self.window.set_title(f"{name} – {APP_NAME}")
+            app = self.get_application()
+            if self.file is not None and not app._quitting:
+                app._last_selected_file = self.file.get_uri()
         self.get_application().queue_agenda_refresh()
 
     def _update_position(self):
@@ -930,6 +933,7 @@ class OrganizerApplication(Adw.Application):
         self.hide_weekends = True
         self._quitting = False
         self._session_restored = False
+        self._last_selected_file = ""
         self.recent_files = []
         self.hidden_agenda_files = set()
         self.utility_file_order = []
@@ -1014,13 +1018,17 @@ class OrganizerApplication(Adw.Application):
             return
         self._session_restored = True
         if self.settings:
+            selected = self.settings.get_string("session-active-file")
             for uri in self.settings.get_strv("session-files"):
                 self.open_file(Gio.File.new_for_uri(uri))
+            if selected:
+                self.open_file(Gio.File.new_for_uri(selected))
 
     def save_session(self):
         if self.settings:
             uris = [tab.file.get_uri() for tab in self.editor_tabs() if tab.file is not None]
             self.settings.set_strv("session-files", uris)
+            self.settings.set_string("session-active-file", self._last_selected_file)
             Gio.Settings.sync()
 
     def new_window(self):

@@ -27,6 +27,7 @@ class TabTests(unittest.TestCase):
         self.app.hidden_agenda_files = set()
         self.app.utility_file_order = []
         self.app._saved_utility_file_order = []
+        self.app._last_selected_file = ""
         self.addCleanup(self.cleanup_windows)
 
     def cleanup_windows(self):
@@ -1560,6 +1561,40 @@ class TabTests(unittest.TestCase):
             self.app._on_quit()
             tab.window.get_visible_dialog().emit("response", "cancel")
             settings.set_strv.assert_not_called()
+
+    def test_startup_reselects_last_file_after_empty_document_and_quit_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Gio.SettingsSchemaSource.new_from_directory(
+                os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data")),
+                Gio.SettingsSchemaSource.get_default(), False)
+            settings = Gio.Settings.new_full(
+                source.lookup("io.github.kllmanu.Organizer", False),
+                Gio.memory_settings_backend_new(), None)
+            settings.set_string("agenda-directory", directory)
+            files = []
+            with patch.object(self.app, "settings", settings):
+                for name in ("first.org", "second.org"):
+                    path = os.path.join(directory, name)
+                    with open(path, "w") as stream:
+                        stream.write("* " + name)
+                    files.append(Gio.File.new_for_path(path))
+                    self.app.open_file(files[-1])
+                self.wait_for(lambda: all(tab.get_text() for tab in self.app.editor_tabs()))
+                first = self.app.window_for_path(files[0].get_path())
+                first.present()
+                self.app.new_tab().present()
+                with patch.object(self.app, "quit"):
+                    self.app._on_quit()
+                self.assertEqual(settings.get_string("session-active-file"), files[0].get_uri())
+                self.app._session_restored = False
+                self.app.do_activate()
+                window = self.app.editor_windows()[0]
+                self.assertEqual(window.active_tab.file.get_uri(), files[0].get_uri())
+                self.wait_for(lambda: window.active_tab.get_text() == "* first.org")
+                self.assertEqual(len(window.documents()), 2)
+                self.assertEqual(window.stack.get_visible_child_name(), "files")
+                self.app.do_open([files[1]], 1, "")
+                self.assertEqual(window.active_tab.file.get_uri(), files[1].get_uri())
 
     def test_control_scroll_zooms_and_respects_limits(self):
         controller = Mock()
