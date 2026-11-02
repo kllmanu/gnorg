@@ -2165,9 +2165,15 @@ class TabTests(unittest.TestCase):
             settings.set_strv.assert_called_with("recent-files", self.app.recent_files)
 
     def test_picker_recent_files_filter_and_open(self):
+        with tempfile.TemporaryDirectory() as directory:
+            recent = Gio.File.new_for_path(os.path.join(directory, "work-recent.org"))
+            with open(recent.get_path(), "w") as stream:
+                stream.write("* Recent")
+            self._check_picker_recent_file(recent)
+
+    def _check_picker_recent_file(self, recent):
         tab = self.app.new_tab()
         tab.file = Gio.File.new_for_path("/org/open.org")
-        recent = Gio.File.new_for_path("/org/work/recent.org")
         picker = BufferPicker([tab], tab, [tab.file, recent])
         tab.present()
         picker.present(tab.window)
@@ -2177,6 +2183,34 @@ class TabTests(unittest.TestCase):
         with patch.object(self.app, "open_file") as open_file:
             picker._activate_selected()
             open_file.assert_called_once_with(recent)
+
+    def test_buffer_switcher_prunes_deleted_recent_files_and_keeps_open_buffers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            existing = Gio.File.new_for_path(os.path.join(directory, "existing.org"))
+            missing = Gio.File.new_for_path(os.path.join(directory, "missing.org"))
+            with open(existing.get_path(), "w") as stream:
+                stream.write("* Existing")
+            tab = self.app.new_tab()
+            tab.file = missing
+            tab.buffer.set_text("* Unsaved")
+            tab.present()
+            self.app.recent_files = [missing.get_uri(), existing.get_uri()]
+            settings = Mock()
+            with (patch.object(self.app, "settings", settings),
+                  patch("vim.BufferPicker") as picker):
+                self.app.show_buffers()
+                settings.set_strv.assert_called_once_with("recent-files", [existing.get_uri()])
+                self.assertEqual([file.get_uri() for file in picker.call_args.args[2]],
+                                 [existing.get_uri()])
+                self.assertIn(tab, picker.call_args.args[0])
+            self.assertEqual(self.app.recent_files, [existing.get_uri()])
+            picker = BufferPicker([tab], tab, [existing, missing])
+            self.assertEqual(picker.results, [tab, existing])
+            os.unlink(existing.get_path())
+            picker.search.set_text("existing")
+            self.assertEqual(picker.results, [])
+            picker.search.set_text("")
+            self.assertEqual(picker.results, [tab])
 
     def test_buffer_picker_switch_and_cancel(self):
         first = self.app.new_tab()

@@ -4,7 +4,7 @@
     <key name="recent-files" type="as">
       <default>[]</default>
       <summary>Recently opened files</summary>
-      <description>The 20 most recently opened file URIs, newest first, for document completion.</description>
+      <description>The 20 most recently opened file URIs, newest first, for document completion. Opening the buffer switcher removes missing files from this history; open editor buffers remain accessible to preserve unsaved work.</description>
     </key>
     <key name="window-width" type="i">
       <range min="1" max="2147483647"/>

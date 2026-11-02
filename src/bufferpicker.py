@@ -117,6 +117,8 @@ class BufferPicker(Gtk.Popover):
             row.add_suffix(close_button)
             self.listbox.append(row)
         for file in self.recent_files:
+            if not file.query_exists(None):
+                continue
             name = file.get_basename()
             path = file.get_path() or file.get_uri()
             if not matches_buffer(query, name, path):

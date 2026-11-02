@@ -1432,7 +1432,13 @@ class OrganizerApplication(Adw.Application):
     def show_buffers(self):
         window = self.get_active_window()
         current = window.active_tab if isinstance(window, EditorWindow) else None
-        files = [Gio.File.new_for_uri(uri) for uri in self.recent_files]
+        files = [file for uri in self.recent_files
+                 if (file := Gio.File.new_for_uri(uri)).query_exists(None)]
+        uris = [file.get_uri() for file in files]
+        if uris != self.recent_files:
+            self.recent_files = uris
+            if self.settings:
+                self.settings.set_strv("recent-files", uris)
         BufferPicker(self.editor_tabs(), current, files).present(window)
 
     def show_preferences(self):
