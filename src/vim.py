@@ -16,7 +16,7 @@ import org  # noqa: E402
 from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
-from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgTagAlign  # noqa: E402
+from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgTagAlign, OrgTodoInteraction  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
@@ -123,6 +123,7 @@ class EditorTab(Adw.Bin):
         self.org_fold = OrgFold(self.view)
         self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
+        self.org_todo_interaction = OrgTodoInteraction(self.view, self._cycle_todo_at_line)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() in (
                 GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
@@ -526,6 +527,10 @@ class EditorTab(Adw.Bin):
         if idx is None:
             self.toast("Not inside an Org heading")
         return lines, idx
+
+    def _cycle_todo_at_line(self, line):
+        self.buffer.place_cursor(self.buffer.get_iter_at_line(line)[1])
+        self.cycle_todo()
 
     def cycle_todo(self):
         lines, idx = self._current_heading()

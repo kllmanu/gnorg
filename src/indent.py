@@ -7,6 +7,16 @@ import re
 import org
 
 
+def _set_pointer_hover(view, owner, active):
+    owners = getattr(view, "_org_pointer_owners", set())
+    if active:
+        owners.add(owner)
+    else:
+        owners.discard(owner)
+    view._org_pointer_owners = owners
+    view.set_cursor_from_name("pointer" if owners else "text")
+
+
 class OrgLineNumbers(GtkSource.GutterRendererText):
     """Keep native gutter selection behavior while skipping invisible Org lines."""
 
@@ -370,6 +380,67 @@ class OrgFold:
         return GLib.SOURCE_REMOVE
 
 
+class OrgTodoInteraction:
+    """Make heading task keywords clickable without changing text selection elsewhere."""
+
+    def __init__(self, view, cycle):
+        self.view = view
+        self.cycle = cycle
+        self._hovering = False
+        motion = Gtk.EventControllerMotion(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        motion.connect("enter", self._motion)
+        motion.connect("motion", self._motion)
+        motion.connect("leave", self._leave)
+        view.add_controller(motion)
+        click = Gtk.GestureClick(button=1, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        click.connect("pressed", self._pressed)
+        view.add_controller(click)
+
+    def _keyword_at(self, x, y):
+        bx, by = self.view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, int(x), int(y))
+        buffer = self.view.get_buffer()
+        _ok, iterator = self.view.get_iter_at_location(bx, by)
+        start = buffer.get_iter_at_line(iterator.get_line())[1]
+        folded = buffer.get_tag_table().lookup("org-fold-hidden")
+        if folded is not None and start.has_tag(folded):
+            return None
+        end = start.copy()
+        if not end.ends_line():
+            end.forward_to_line_end()
+        text = buffer.get_text(start, end, True)
+        match = org.HEADING_KEYWORD_RE.match(text)
+        if match is None or match[2] is None:
+            return None
+        keyword = buffer.get_iter_at_line_offset(start.get_line(), match.start(2))[1]
+        rect = self.view.get_iter_location(keyword)
+        layout = self.view.create_pango_layout(match[2])
+        attributes = Pango.AttrList()
+        for tag in sorted(keyword.get_tags(), key=lambda tag: tag.get_priority()):
+            if tag.props.weight_set:
+                attributes.change(Pango.attr_weight_new(tag.props.weight))
+        layout.set_attributes(attributes)
+        if rect.x <= bx < rect.x + layout.get_pixel_size()[0] and rect.y <= by < rect.y + rect.height:
+            return start.get_line()
+        return None
+
+    def _motion(self, _controller, x, y):
+        hovering = self._keyword_at(x, y) is not None
+        if hovering or self._hovering:
+            _set_pointer_hover(self.view, self, hovering)
+        self._hovering = hovering
+
+    def _leave(self, *_):
+        if self._hovering:
+            _set_pointer_hover(self.view, self, False)
+        self._hovering = False
+
+    def _pressed(self, gesture, _n_press, x, y):
+        line = self._keyword_at(x, y)
+        if line is not None:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self.cycle(line)
+
+
 class OrgTagAlign:
     """Stretch heading tag separators to the viewport edge without editing text."""
 
@@ -513,7 +584,7 @@ class OrgTagAlign:
             button.set_can_target(active)
         hovering = hovered is not None
         if hovering != self._hovering_tags:
-            self.view.set_cursor_from_name("pointer" if hovering else "text")
+            _set_pointer_hover(self.view, self, hovering)
             self._hovering_tags = hovering
 
     def _edit_clicked(self, button):
