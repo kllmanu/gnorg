@@ -16,7 +16,7 @@ import org  # noqa: E402
 from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
-from indent import OrgFold, OrgIndent  # noqa: E402
+from indent import OrgFold, OrgIndent, OrgTagAlign  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
@@ -121,6 +121,7 @@ class EditorTab(Adw.Bin):
         self._setup_style()
         self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
         self.org_fold = OrgFold(self.view)
+        self.org_tag_align = OrgTagAlign(self.view)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() == GLib.dgettext(
                 "gtksourceview-5", "-- VISUAL LINE --")))

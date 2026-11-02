@@ -105,22 +105,28 @@ class OrgFold:
 
     def _layout_indicators(self, *_):
         for line, label in self.indicators.items():
-            end = self.buffer.get_iter_at_line(line)[1]
+            start = self.buffer.get_iter_at_line(line)[1]
+            end = start.copy()
             if not end.ends_line():
                 end.forward_to_line_end()
+            text = self.buffer.get_text(start, end, True)
+            match = org.TAGS_RE.search(text.rstrip())
+            if match:
+                end = self.buffer.get_iter_at_line_offset(line, match.start())[1]
             while end.get_line_offset() > 0:
                 previous = end.copy()
                 previous.backward_char()
                 if not previous.get_char().isspace():
                     break
                 end = previous
-            rect = self.view.get_iter_location(end)
-            position = (rect.x, rect.y)
+            last = end.copy()
+            last.backward_char()
+            # The separator's stretched glyph must not move the fold indicator.
+            rect = self.view.get_iter_location(last if match else end)
+            position = (rect.x + rect.width if match else rect.x, rect.y)
             if self._indicator_positions.get(line) != position:
                 self.view.move_overlay(label, *position)
                 self._indicator_positions[line] = position
-            last = end.copy()
-            last.backward_char()
             color = None
             weight = Pango.Weight.NORMAL
             for tag in sorted(last.get_tags(), key=lambda tag: tag.get_priority()):
@@ -297,6 +303,67 @@ class OrgFold:
             self.view.add_overlay(label, 0, 0)
         self._layout_indicators()
         return GLib.SOURCE_REMOVE
+
+
+class OrgTagAlign:
+    """Stretch heading tag separators to the viewport edge without editing text."""
+
+    def __init__(self, view):
+        self.view = view
+        self.buffer = view.get_buffer()
+        self._tags = []
+        self._lines = []
+        self._dirty = True
+        self._layout_size = None
+        self.buffer.connect("changed", self._changed)
+        view.add_tick_callback(self._layout)
+
+    def _changed(self, *_):
+        self._dirty = True
+
+    def _layout(self, *_):
+        layout_size = (self.view.get_visible_rect().width,
+                       self.view.create_pango_layout(" ").get_pixel_size(),
+                       self.view.get_left_margin(), self.view.get_right_margin())
+        if layout_size != self._layout_size:
+            self._layout_size = layout_size
+            self._dirty = True
+        if self._dirty:
+            self._dirty = False
+            for tag in self._tags:
+                self.buffer.remove_tag(tag, *self.buffer.get_bounds())
+            self._lines = []
+            text = self.buffer.get_text(*self.buffer.get_bounds(), True)
+            for line, text in enumerate(text.split("\n")):
+                if org.parse_heading(text) is None:
+                    continue
+                match = org.TAGS_RE.search(text.rstrip())
+                if match is None:
+                    continue
+                count = len(match[0]) - len(match[1])
+                index = len(self._lines)
+                if index == len(self._tags):
+                    self._tags.append(self.buffer.create_tag(None, letter_spacing=0))
+                tag = self._tags[index]
+                tag.props.letter_spacing = 0
+                start = self.buffer.get_iter_at_line_offset(line, match.start())[1]
+                end = self.buffer.get_iter_at_line_offset(line, match.start() + count)[1]
+                self.buffer.apply_tag(tag, start, end)
+                self._lines.append((line, len(text.rstrip()), count, tag))
+        # Leave room for TextView's end-of-line caret in the scrollable extent.
+        right = self.view.get_visible_rect().width - self.view.get_right_margin() - 2
+        for line, end, count, tag in self._lines:
+            iterator = self.buffer.get_iter_at_line_offset(line, end)[1]
+            folded = self.buffer.get_tag_table().lookup("org-fold-hidden")
+            if folded is not None and iterator.has_tag(folded):
+                continue
+            x = self.view.get_iter_location(iterator).x
+            delta = right - x
+            if abs(delta) > 1:
+                spacing = max(0, tag.props.letter_spacing + round(delta * Pango.SCALE / count))
+                if spacing != tag.props.letter_spacing:
+                    tag.props.letter_spacing = spacing
+        return GLib.SOURCE_CONTINUE
 
 
 class OrgIndent:

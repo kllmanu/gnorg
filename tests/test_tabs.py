@@ -114,6 +114,57 @@ class TabTests(unittest.TestCase):
         self.assertEqual(tab.get_text(), "* Report\n- [X] Task\n")
         self.assertIsNone(tab._active_tag_popover)
 
+    def test_heading_tags_align_right_after_resize_without_changing_text(self):
+        tab = self.app.new_tab()
+        text = "* First :work:\n** Second :home:project:\nBody :not_a_heading:\n"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+
+        def aligned():
+            right = tab.view.get_visible_rect().width - tab.view.get_right_margin() - 2
+            return right > 100 and all(abs(tab.view.get_iter_location(
+                tab.buffer.get_iter_at_line_offset(line, len(heading))[1]).x - right) <= 2
+                for line, heading in enumerate(text.splitlines()[:2]))
+
+        self.wait_for(aligned)
+        adjustment = tab.view.get_hadjustment()
+        self.wait_for(lambda: adjustment.get_upper() <= adjustment.get_page_size())
+        old_width = tab.view.get_width()
+        tab.window.set_default_size(tab.window.get_width() + 180, tab.window.get_height())
+        self.wait_for(lambda: tab.view.get_width() != old_width)
+        self.wait_for(aligned)
+        self.wait_for(lambda: adjustment.get_upper() <= adjustment.get_page_size())
+        old_width = tab.view.get_width()
+        tab.window.set_default_size(tab.window.get_width() - 260, tab.window.get_height())
+        self.wait_for(lambda: tab.view.get_width() != old_width)
+        self.wait_for(aligned)
+        self.wait_for(lambda: adjustment.get_upper() <= adjustment.get_page_size())
+        self.assertEqual(tab.get_text(), text)
+        previous_zoom = self.app.zoom
+        self.addCleanup(lambda: self.app.set_zoom(previous_zoom, notify=False))
+        display = Gdk.Display.get_default()
+        Gtk.StyleContext.remove_provider_for_display(display, self.app.zoom_css)
+        Gtk.StyleContext.add_provider_for_display(
+            display, self.app.zoom_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        for zoom in (150, 200, 100):
+            if self.app.zoom == zoom:
+                continue
+            old_font_size = tab.view.create_pango_layout(" ").get_pixel_size()
+            self.app.set_zoom(zoom, notify=False)
+            self.wait_for(lambda: tab.view.create_pango_layout(" ").get_pixel_size()
+                          != old_font_size)
+            self.wait_for(aligned)
+            self.wait_for(lambda: adjustment.get_upper() <= adjustment.get_page_size())
+        self.assertFalse(tab.buffer.get_modified())
+        text = "* First :longer_tag:another:\n** Second :home:project:\n"
+        tab.buffer.set_text(text)
+        self.wait_for(aligned)
+        self.assertEqual(tab.get_text(), text)
+        tab.buffer.insert(tab.buffer.get_end_iter(), "A genuinely long line " * 100)
+        self.wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size())
+
     def test_new_and_close_actions_target_selected_tab(self):
         first = self.app.new_tab()
         first.buffer.set_text("* First")
@@ -1260,6 +1311,37 @@ class TabTests(unittest.TestCase):
 
         self.wait_for(aligned)
         self.assertEqual(tab.get_text(), "* Parent   \nBody\n* Next")
+
+    def test_fold_dots_stay_after_title_before_right_aligned_tags(self):
+        tab = self.app.new_tab()
+        text = "* Parent :work:home:\nBody\n* Next\n"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.present()
+        tab.org_fold.cycle()
+        label = tab.org_fold.indicators[0]
+
+        def aligned():
+            last = tab.buffer.get_iter_at_line_offset(0, len("* Parent") - 1)[1]
+            rect = tab.view.get_iter_location(last)
+            x, y = tab.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, rect.x + rect.width, rect.y)
+            ok, bounds = label.compute_bounds(tab.view)
+            tags = tab.view.get_iter_location(
+                tab.buffer.get_iter_at_line_offset(0, len("* Parent "))[1])
+            return (ok and label.get_width() > 0
+                    and abs(bounds.get_x() - x) <= 1
+                    and abs(bounds.get_y() - y) <= 1
+                    and rect.x + rect.width + label.get_width() < tags.x)
+
+        self.wait_for(aligned)
+        old_width = tab.view.get_width()
+        tab.window.set_default_size(tab.window.get_width() + 180, tab.window.get_height())
+        self.wait_for(lambda: tab.view.get_width() != old_width)
+        self.wait_for(aligned)
+        self.assertEqual(tab.get_text(), text)
+        self.assertFalse(tab.buffer.get_modified())
 
     def test_cursor_skips_folded_lines_in_both_directions(self):
         tab = self.app.new_tab()
