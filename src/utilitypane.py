@@ -42,6 +42,7 @@ class UtilityPane(Adw.Bin):
         self._signature = None
         self.rows = []
         self._dragging = False
+        self._context_menu = None
 
         self.calendar = Gtk.Calendar(show_week_numbers=True, margin_top=12,
                                      margin_bottom=12, margin_start=12, margin_end=12)
@@ -68,6 +69,7 @@ class UtilityPane(Adw.Bin):
                                    css_classes=["navigation-sidebar", "utility-files"])
         css = Gtk.CssProvider()
         css.load_from_string("""
+            .file-action-label { font-weight: normal; }
             .utility-files row.current-document { background-color: alpha(black, 0.10); }
             .utility-files row.current-document:hover { background-color: alpha(black, 0.15); }
             .utility-files row.drop-before { box-shadow: inset 0 2px @accent_color; }
@@ -109,7 +111,7 @@ class UtilityPane(Adw.Bin):
         self.set_child(toolbar)
 
     def refresh(self):
-        if self._dragging:
+        if self._dragging or self._context_menu is not None:
             return
         sources = self.app.agenda_files()
         documents = self.window.documents()
@@ -120,6 +122,8 @@ class UtilityPane(Adw.Bin):
             items.append((Gio.File.new_for_path(path), tab, True))
             seen.add(os.path.realpath(path))
         for tab in documents:
+            if tab.file and self.app.file_removed(tab.file):
+                continue
             if tab.file is None and tab.buffer.get_char_count() == 0:
                 continue
             if tab.path and os.path.realpath(tab.path) in seen:
@@ -154,6 +158,7 @@ class UtilityPane(Adw.Bin):
             (file.get_uri() if file else None, tab, source,
              tab.buffer.get_modified() if tab else False,
              self.app.agenda_file_visible(file.get_path()) if source else False,
+             self.app.calendar_file_color(file.get_path()) if file and file.get_path() else None,
              tab is self.window.active_tab)
             for file, tab, source in items)
         if signature != self._signature:
@@ -174,7 +179,7 @@ class UtilityPane(Adw.Bin):
                                       valign=Gtk.Align.CENTER,
                                       accessible_role=Gtk.AccessibleRole.PRESENTATION)
                 color = Gdk.RGBA()
-                color.parse(file_color(path) if path else "#9a9996")
+                color.parse(self.app.calendar_file_color(path) if path else "#9a9996")
                 dot.set_draw_func(self._draw_dot, color)
                 row.color_dot = dot
                 content.append(dot)
@@ -185,6 +190,12 @@ class UtilityPane(Adw.Bin):
                 row.file = file
                 row.visibility = None
                 row.set_tooltip_text(path or "Untitled")
+                click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+                click.connect("pressed", self._on_context_pressed, row)
+                row.add_controller(click)
+                keys = Gtk.EventControllerKey()
+                keys.connect("key-pressed", self._on_context_key, row)
+                row.add_controller(keys)
                 if tab is not None and tab is self.window.active_tab:
                     row.add_css_class("current-document")
                 drag = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
@@ -214,6 +225,113 @@ class UtilityPane(Adw.Bin):
             self.empty.set_visible(not items)
         self.app.save_utility_file_order()
         self.update_marks()
+
+    def _on_context_key(self, _controller, keyval, _keycode, state, row):
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if keyval == Gdk.KEY_Menu or (
+                keyval == Gdk.KEY_F10 and modifiers == Gdk.ModifierType.SHIFT_MASK):
+            self._show_file_menu(row, 0, row.get_height())
+            return True
+        return False
+
+    def _on_context_pressed(self, gesture, _count, x, y, row):
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self._show_file_menu(row, x, y)
+
+    def _show_file_menu(self, row, x, y):
+        if self._context_menu:
+            self._context_menu.popdown()
+            return
+        popover = Gtk.Popover(has_arrow=False)
+        popover.set_parent(row)
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
+        popover.set_pointing_to(rect)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for label, callback, enabled in (
+                ("Rename…", lambda: self._rename_file(row), row.file is not None),
+                ("Change Color…", lambda: self._choose_file_color(row),
+                 bool(row.file and row.file.get_path() and row.visibility)),
+                ("Remove", lambda: self.app.remove_document(
+                    row.file, row.document, self.window), True),
+                ("Move to Trash…", lambda: self._confirm_trash(row), row.file is not None)):
+            button = Gtk.Button(css_classes=["flat"], sensitive=enabled)
+            button.set_child(Gtk.Label(label=label, xalign=0, css_classes=["file-action-label"]))
+
+            def activate(_button, action=callback):
+                popover.popdown()
+                action()
+
+            button.connect("clicked", activate)
+            buttons.append(button)
+        popover.set_child(buttons)
+        self._context_menu = popover
+
+        def closed(*_):
+            def cleanup():
+                popover.unparent()
+                self._context_menu = None
+                self.refresh()
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(cleanup)
+
+        popover.connect("closed", closed)
+        popover.popup()
+
+    def _rename_file(self, row):
+        entry = Gtk.Entry(text=row.file.get_basename(), activates_default=True)
+        dialog = Adw.AlertDialog(
+            heading="Rename File", extra_child=entry,
+            close_response="cancel", default_response="rename")
+        dialog.add_response("cancel", "_Cancel")
+        dialog.add_response("rename", "_Rename")
+        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+
+        def validate(*_):
+            name = entry.get_text()
+            dialog.set_response_enabled(
+                "rename", bool(name and name not in (".", "..") and "/" not in name
+                               and name != row.file.get_basename()))
+
+        entry.connect("changed", validate)
+        validate()
+        dialog.connect("response", lambda _dialog, response:
+                       self.app.rename_document(row.file, entry.get_text(), self.window)
+                       if response == "rename" else None)
+        dialog.present(self.window)
+        entry.grab_focus()
+
+    def _confirm_trash(self, row):
+        dialog = Adw.AlertDialog(
+            heading="Move File to Trash?",
+            body=f"“{row.file.get_basename()}” will be removed from GNORG and moved to Trash.",
+            close_response="cancel", default_response="cancel")
+        dialog.add_response("cancel", "_Cancel")
+        dialog.add_response("trash", "Move to _Trash")
+        dialog.set_response_appearance("trash", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.connect("response", lambda _dialog, response:
+                       self.app.remove_document(row.file, row.document, self.window, trash=True)
+                       if response == "trash" else None)
+        dialog.present(self.window)
+
+    def _choose_file_color(self, row):
+        dialog = Gtk.ColorDialog(title="Calendar Color", with_alpha=False)
+        initial = Gdk.RGBA()
+        initial.parse(self.app.calendar_file_color(row.file.get_path()))
+
+        def chosen(source, result):
+            try:
+                color = source.choose_rgba_finish(result)
+            except GLib.Error as error:
+                if error.matches(Gtk.dialog_error_quark(), Gtk.DialogError.DISMISSED):
+                    return
+                self.window.active_view.toast(f"Could not choose color: {error.message}")
+                return
+            value = "#{:02x}{:02x}{:02x}".format(
+                round(color.red * 255), round(color.green * 255), round(color.blue * 255))
+            self.app.set_calendar_file_color(row.file, value)
+
+        dialog.choose_rgba(self.window, initial, None, chosen)
 
     def _on_drag_prepare(self, source, x, y, row):
         picked = row.pick(x, y, Gtk.PickFlags.DEFAULT)

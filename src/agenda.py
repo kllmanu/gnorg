@@ -82,6 +82,12 @@ class AgendaView(Adw.Bin):
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
+        self.file_color_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), self.file_color_css,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        self.connect("destroy", lambda *_: Gtk.StyleContext.remove_provider_for_display(
+            Gdk.Display.get_default(), self.file_color_css))
         self._active_date_popover = None
         self._folder_message = None
         self._zoom_toast = None
@@ -246,6 +252,13 @@ class AgendaView(Adw.Bin):
         if self._active_date_popover is not None:
             return
         directory, files, entries = self.app.agenda_entries()
+        colors = set(self.app.file_colors.values())
+        self.file_color_css.load_from_string("\n".join(
+            f".calendar-event.custom-color-{color[1:]}:not(.deadline) {{ "
+            f"background: alpha({color}, 0.18); border-left-color: {color}; }} "
+            f".calendar-event.custom-color-{color[1:]}:not(.deadline):hover {{ "
+            f"background: alpha({color}, 0.28); }}"
+            for color in colors))
         today = dt.date.today()
         self.today_button.set_sensitive(self.start != org.week_start(today))
         self.days = {
@@ -412,6 +425,9 @@ class AgendaView(Adw.Bin):
                             else ["calendar-event"])
         if "deadline" not in item.kind:
             button.add_css_class(f"file-color-{file_color_index(entry.path)}")
+            color = self.app.calendar_file_color(entry.path)
+            if color in self.app.file_colors.values():
+                button.add_css_class(f"custom-color-{color[1:]}")
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1,
                           valign=Gtk.Align.START)
         detail = item.label or "Event"

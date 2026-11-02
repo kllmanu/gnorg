@@ -61,6 +61,16 @@
       <summary>Utility pane file order</summary>
       <description>Canonical file URIs in display order. Drag file rows above or below one another to reorder them. The order is shared across windows and restored between sessions; new files are appended. Unsaved drafts keep their position during the session but are not stored.</description>
     </key>
+    <key name="removed-files" type="as">
+      <default>[]</default>
+      <summary>Files removed from the workspace</summary>
+      <description>Canonical file URIs excluded from the utility pane, Calendar, and Agenda. Remove leaves the file on disk; Move to Trash asks for confirmation. Explicitly opening a removed file adds it back.</description>
+    </key>
+    <key name="file-colors" type="a{ss}">
+      <default>{}</default>
+      <summary>Custom file calendar colors</summary>
+      <description>Canonical file URIs mapped to RGB hex colors chosen with Change Color in the file context menu. Colors apply to utility pane dots and calendar events; deadlines retain their warning color. Rename preserves the file color, visibility, list position, and unsaved editor contents.</description>
+    </key>
     <key name="hide-weekends" type="b">
       <default>true</default>
       <summary>Hide weekends</summary>

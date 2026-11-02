@@ -17,7 +17,7 @@ from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgFold, OrgIndent  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
-from utilitypane import UtilityPane  # noqa: E402
+from utilitypane import UtilityPane, file_color, file_order_key  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
 APP_NAME = "GNORG"
@@ -930,6 +930,8 @@ class OrganizerApplication(Adw.Application):
         self._last_selected_file = ""
         self.recent_files = []
         self.hidden_agenda_files = set()
+        self.removed_files = set()
+        self.file_colors = {}
         self.utility_file_order = []
         self._saved_utility_file_order = []
         self.connect("window-removed", self._on_window_removed)
@@ -952,6 +954,8 @@ class OrganizerApplication(Adw.Application):
             self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
             self.hidden_agenda_files = set(self.settings.get_strv("hidden-agenda-files"))
+            self.removed_files = set(self.settings.get_strv("removed-files"))
+            self.file_colors = self.settings.get_value("file-colors").unpack()
             self.utility_file_order = self.settings.get_strv("utility-file-order")
             self._saved_utility_file_order = list(self.utility_file_order)
 
@@ -1014,8 +1018,10 @@ class OrganizerApplication(Adw.Application):
         if self.settings:
             selected = self.settings.get_string("session-active-file")
             for uri in self.settings.get_strv("session-files"):
-                self.open_file(Gio.File.new_for_uri(uri))
-            if selected:
+                file = Gio.File.new_for_uri(uri)
+                if not self.file_removed(file):
+                    self.open_file(file)
+            if selected and not self.file_removed(Gio.File.new_for_uri(selected)):
                 self.open_file(Gio.File.new_for_uri(selected))
 
     def save_session(self):
@@ -1049,6 +1055,10 @@ class OrganizerApplication(Adw.Application):
         return None
 
     def open_file(self, file, then=None):
+        key = file_order_key(file, None)
+        if key in self.removed_files:
+            self.removed_files.remove(key)
+            self._save_removed_files()
         win = self.window_for_path(file.get_path()) if file.get_path() else None
         if win is None:
             for w in self.editor_tabs():
@@ -1107,7 +1117,102 @@ class OrganizerApplication(Adw.Application):
             if tab.path and tab.path.endswith(".org") and os.path.realpath(tab.path) not in seen:
                 files.append(tab.path)
                 seen.add(os.path.realpath(tab.path))
-        return files
+        return [path for path in files if not self.file_removed(Gio.File.new_for_path(path))]
+
+    def file_removed(self, file):
+        return file_order_key(file, None) in self.removed_files
+
+    def _save_removed_files(self):
+        if self.settings:
+            self.settings.set_strv("removed-files", sorted(self.removed_files))
+
+    def calendar_file_color(self, path):
+        key = file_order_key(Gio.File.new_for_path(path), None)
+        return self.file_colors.get(key, file_color(path))
+
+    def set_calendar_file_color(self, file, color):
+        self.file_colors[file_order_key(file, None)] = color
+        if self.settings:
+            self.settings.set_value("file-colors", GLib.Variant("a{ss}", self.file_colors))
+        self.queue_agenda_refresh()
+
+    def rename_document(self, file, name, window):
+        old_key = file_order_key(file, None)
+        documents = [tab for tab in self.editor_tabs()
+                     if tab.file and file_order_key(tab.file, None) == old_key]
+        old_color = self.calendar_file_color(file.get_path()) if file.get_path() else None
+
+        def renamed(source, result):
+            try:
+                renamed_file = source.set_display_name_finish(result)
+            except GLib.Error as error:
+                window.active_view.toast(f"Could not rename file: {error.message}")
+                return
+            new_key = file_order_key(renamed_file, None)
+            for keys in (self.hidden_agenda_files, self.removed_files):
+                if old_key in keys:
+                    keys.remove(old_key)
+                    keys.add(new_key)
+            self.file_colors.pop(old_key, None)
+            if old_color:
+                self.file_colors[new_key] = old_color
+            self.utility_file_order = [new_key if key == old_key else key
+                                       for key in self.utility_file_order]
+            self.recent_files = [uri for uri in self.recent_files if uri != file.get_uri()]
+            if self.settings:
+                self.settings.set_strv("hidden-agenda-files", sorted(self.hidden_agenda_files))
+                self._save_removed_files()
+                self.settings.set_value("file-colors", GLib.Variant("a{ss}", self.file_colors))
+            self.save_utility_file_order()
+            self.remember_file(renamed_file)
+            if self._last_selected_file == file.get_uri():
+                self._last_selected_file = renamed_file.get_uri()
+            for tab in documents:
+                if tab in self.editor_tabs() and tab.file.equal(file):
+                    tab.file = renamed_file
+                    tab._update_language()
+                    tab._update_title()
+            self.queue_agenda_refresh()
+
+        file.set_display_name_async(name, GLib.PRIORITY_DEFAULT, None, renamed)
+
+    def remove_document(self, file, document, window, trash=False):
+        def finish(confirmed):
+            if not confirmed:
+                return
+
+            def remove():
+                if file:
+                    self.removed_files.add(file_order_key(file, None))
+                    self._save_removed_files()
+                if document and document in self.editor_tabs():
+                    if document.window.tabs.get_n_pages() == 1:
+                        document.window.new_tab()
+                    document.force_close()
+                if file and self._last_selected_file:
+                    selected = Gio.File.new_for_uri(self._last_selected_file)
+                    if file_order_key(selected, None) == file_order_key(file, None):
+                        active = window.active_tab
+                        self._last_selected_file = (
+                            active.file.get_uri() if active and active.file else "")
+                self.queue_agenda_refresh()
+
+            if trash:
+                def trashed(source, result):
+                    try:
+                        source.trash_finish(result)
+                    except GLib.Error as error:
+                        window.active_view.toast(f"Could not move file to Trash: {error.message}")
+                        return
+                    remove()
+                file.trash_async(GLib.PRIORITY_DEFAULT, None, trashed)
+            else:
+                remove()
+
+        if document:
+            document.request_close(finish)
+        else:
+            finish(True)
 
     def agenda_file_visible(self, path):
         return Gio.File.new_for_path(os.path.realpath(path)).get_uri() not in self.hidden_agenda_files
@@ -1118,8 +1223,6 @@ class OrganizerApplication(Adw.Application):
             if self.settings:
                 self.settings.set_strv("utility-file-order", uris)
             self._saved_utility_file_order = uris
-
-
     def set_agenda_file_visible(self, path, visible):
         uri = Gio.File.new_for_path(os.path.realpath(path)).get_uri()
         if visible:
