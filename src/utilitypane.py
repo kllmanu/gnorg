@@ -68,6 +68,8 @@ class UtilityPane(Adw.Bin):
                                    css_classes=["navigation-sidebar", "utility-files"])
         css = Gtk.CssProvider()
         css.load_from_string("""
+            .utility-files row.current-document { background-color: alpha(black, 0.10); }
+            .utility-files row.current-document:hover { background-color: alpha(black, 0.15); }
             .utility-files row.drop-before { box-shadow: inset 0 2px @accent_color; }
             .utility-files row.drop-after { box-shadow: inset 0 -2px @accent_color; }
             .utility-file-visibility {
@@ -183,6 +185,8 @@ class UtilityPane(Adw.Bin):
                 row.file = file
                 row.visibility = None
                 row.set_tooltip_text(path or "Untitled")
+                if tab is not None and tab is self.window.active_tab:
+                    row.add_css_class("current-document")
                 drag = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
                 drag.connect("prepare", self._on_drag_prepare, row)
                 drag.connect("drag-end", self._on_drag_end)
@@ -265,6 +269,20 @@ class UtilityPane(Adw.Bin):
             self.app.open_file(row.file)
         if self.window.split_view.get_collapsed():
             self.window.split_view.set_show_sidebar(False)
+
+    def navigate_files(self, direction):
+        self.refresh()
+        if not self.rows:
+            return
+        current = next((index for index, row in enumerate(self.rows)
+                        if row.document is self.window.active_tab), None)
+        if current is None:
+            index = 0 if direction > 0 else len(self.rows) - 1
+        else:
+            index = max(0, min(current + direction, len(self.rows) - 1))
+            if index == current:
+                return
+        self._on_file_activated(self.listbox, self.rows[index])
 
     def _on_new_file(self, *_):
         self.window.new_tab().present()

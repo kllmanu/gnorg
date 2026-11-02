@@ -85,6 +85,32 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(second, window.documents())
 
+    def test_utility_pane_highlights_only_current_document_across_views(self):
+        first = self.app.new_tab()
+        first.buffer.set_text("* First")
+        second = self.app.new_tab()
+        second.buffer.set_text("* Second")
+        window = first.window
+        pane = window.utility_pane
+        pane.refresh()
+
+        def highlighted():
+            return [row.document for row in pane.rows if row.has_css_class("current-document")]
+
+        self.assertEqual(highlighted(), [second])
+        first.present()
+        self.assertEqual(highlighted(), [first])
+        self.app.show_agenda(window)
+        self.assertEqual(highlighted(), [first])
+        self.app.show_weekly_agenda(window)
+        self.assertEqual(highlighted(), [first])
+        row = next(row for row in pane.rows if row.document is second)
+        pane.listbox.emit("row-activated", row)
+        self.assertEqual(highlighted(), [second])
+        second.buffer.set_text("* Changed")
+        pane.refresh()
+        self.assertEqual(highlighted(), [second])
+
     def test_utility_pane_new_file_button_is_beside_heading_and_opens_editor(self):
         tab = self.app.new_tab()
         window = tab.window
@@ -429,6 +455,60 @@ class TabTests(unittest.TestCase):
         self.assertFalse(app.agenda_file_visible("/org/hidden.org"))
         self.assertTrue(app.agenda_file_visible("/org/visible.org"))
         self.assertEqual(app.utility_file_order, ["file:///org/b.org", "file:///org/a.org"])
+
+    def test_alt_file_navigation_uses_sidebar_order_and_stops_at_edges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [os.path.join(directory, name + ".org") for name in ("a", "b", "c")]
+            for path in paths:
+                with open(path, "w") as stream:
+                    stream.write("* Event\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                self.app.utility_file_order = [Gio.File.new_for_path(path).get_uri()
+                                              for path in reversed(paths)]
+                tab = self.app.open_file(Gio.File.new_for_path(paths[2]))
+                window = tab.window
+
+                def press(key, modifiers=Gdk.ModifierType.ALT_MASK):
+                    return window._on_key_pressed(None, key, 0, modifiers)
+
+                for key, expected in (
+                        (Gdk.KEY_k, paths[2]), (Gdk.KEY_j, paths[1]),
+                        (Gdk.KEY_j, paths[0]), (Gdk.KEY_j, paths[0]),
+                        (Gdk.KEY_k, paths[1]), (Gdk.KEY_k, paths[2]),
+                        (Gdk.KEY_k, paths[2])):
+                    self.assertTrue(press(key))
+                    self.assertEqual(window.active_tab.path, expected)
+                self.app.show_agenda(window)
+                self.assertTrue(press(Gdk.KEY_j))
+                self.assertEqual(window.stack.get_visible_child_name(), "files")
+                self.assertEqual(window.active_tab.path, paths[1])
+                self.app.show_weekly_agenda(window)
+                self.assertTrue(press(Gdk.KEY_k))
+                self.assertEqual(window.active_tab.path, paths[2])
+                self.assertEqual(window.stack.get_visible_child_name(), "files")
+                for key in (Gdk.KEY_j, Gdk.KEY_k):
+                    self.assertFalse(press(
+                        key, Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.CONTROL_MASK))
+                self.wait_for(lambda: all(tab.get_text() for tab in window.documents()))
+                self.assertEqual(len(window.documents()), 3)
+
+    def test_alt_file_navigation_handles_empty_list_and_unlisted_empty_document(self):
+        with patch.object(self.app, "agenda_files", return_value=[]):
+            tab = self.app.new_tab()
+            window = tab.window
+            for key in (Gdk.KEY_j, Gdk.KEY_k):
+                self.assertTrue(window._on_key_pressed(
+                    None, key, 0, Gdk.ModifierType.ALT_MASK))
+                self.assertIs(window.active_tab, tab)
+            tab.buffer.set_text("* Draft")
+            empty = window.new_tab()
+            self.assertTrue(window._on_key_pressed(
+                None, Gdk.KEY_j, 0, Gdk.ModifierType.ALT_MASK))
+            self.assertIs(window.active_tab, tab)
+            empty.present()
+            self.assertTrue(window._on_key_pressed(
+                None, Gdk.KEY_k, 0, Gdk.ModifierType.ALT_MASK))
+            self.assertIs(window.active_tab, tab)
 
     def test_alt_navigation_stops_at_edges_without_switching_documents(self):
         first = self.app.new_tab()

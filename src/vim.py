@@ -783,6 +783,9 @@ class EditorWindow(Adw.ApplicationWindow):
     def _on_key_pressed(self, controller, keyval, keycode, state):
         modifiers = state & Gtk.accelerator_get_default_mod_mask()
         if modifiers == Gdk.ModifierType.ALT_MASK:
+            if keyval in (Gdk.KEY_j, Gdk.KEY_k):
+                self.utility_pane.navigate_files(1 if keyval == Gdk.KEY_j else -1)
+                return True
             if keyval in (Gdk.KEY_h, Gdk.KEY_l):
                 pages = self.stack.get_pages()
                 current = next(i for i in range(pages.get_n_items())
