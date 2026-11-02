@@ -53,7 +53,7 @@ Or create a Week agenda with Any tags work home to show dated items matching
 either tag. All filter fields combine with AND; states and priorities match
 any listed value. Empty fields match everything, including completed headings.
 Tag filters use each heading's own tags rather than inherited parent tags.
-The edit icon beside each saved view lets you change or delete it.
+Right-click a saved view to edit or delete it; Shift+F10 opens the same menu.
 
 ** Literal Org example
 Markup inside source blocks is not formatted or treated as real headings.

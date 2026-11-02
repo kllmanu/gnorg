@@ -118,6 +118,7 @@ class UtilityPane(Adw.Bin):
         content.append(agenda_heading)
         self.agenda_listbox = Gtk.ListBox(
             selection_mode=Gtk.SelectionMode.NONE, css_classes=["navigation-sidebar"])
+        self.agenda_listbox.connect("row-activated", self._on_agenda_activated)
         content.append(self.agenda_listbox)
         self.refresh_agendas()
         header = Adw.HeaderBar(
@@ -129,6 +130,8 @@ class UtilityPane(Adw.Bin):
         self.set_child(toolbar)
 
     def refresh_agendas(self):
+        if self._context_menu is not None:
+            return
         self.agenda_listbox.remove_all()
         self.agenda_rows = []
         if self.app._custom_agenda_load_error:
@@ -136,20 +139,31 @@ class UtilityPane(Adw.Bin):
                 label=self.app._custom_agenda_load_error, wrap=True,
                 css_classes=["error"], margin_start=12, margin_end=12))
         for view in (None, *self.app.custom_agendas):
-            row = Adw.ActionRow(title=view.title if view else "Agenda", activatable=True,
-                                use_markup=False)
-            row.add_prefix(Gtk.Label(label=view.key if view else "a",
+            row = Adw.PreferencesRow(title=view.title if view else "Agenda", activatable=True,
+                                     use_markup=False)
+            content = Gtk.Box(spacing=12, margin_start=6, margin_end=6)
+            content.append(Gtk.Label(label=view.key if view else "a", width_request=16,
                                      css_classes=["monospace", "dim-label"]))
-            row.connect("activated", lambda _row, selected=view:
-                        self.app.show_weekly_agenda(self.window, custom=selected))
+            content.append(Gtk.Label(label=view.title if view else "Agenda", xalign=0,
+                                     hexpand=True, ellipsize=Pango.EllipsizeMode.END))
+            row.set_child(content)
+            row.agenda_view = view
             if view:
-                edit = Gtk.Button(icon_name="document-edit-symbolic", css_classes=["flat"],
-                                  valign=Gtk.Align.CENTER, tooltip_text="Edit Agenda View")
-                edit.connect("clicked", lambda _button, selected=view:
-                             self.app.edit_custom_agenda(self.window, selected))
-                row.add_suffix(edit)
+                gesture = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+                gesture.connect("pressed", self._on_agenda_context_pressed, row, view)
+                row.add_controller(gesture)
+                keys = Gtk.EventControllerKey()
+                keys.connect("key-pressed", self._on_agenda_context_key, row, view)
+                row.add_controller(keys)
             self.agenda_listbox.append(row)
             self.agenda_rows.append(row)
+
+    def _on_agenda_activated(self, _listbox, row):
+        if row not in self.agenda_rows:
+            return
+        self.app.show_weekly_agenda(self.window, custom=row.agenda_view)
+        if self.window.split_view.get_collapsed():
+            self.window.split_view.set_show_sidebar(False)
 
     def refresh(self):
         if self._dragging or self._context_menu is not None:
@@ -280,6 +294,32 @@ class UtilityPane(Adw.Bin):
         self._show_file_menu(row, x, y)
 
     def _show_file_menu(self, row, x, y):
+        self._show_context_menu(row, x, y, (
+            ("Rename…", lambda: self._rename_file(row), row.file is not None),
+            ("Change Color…", lambda: self._choose_file_color(row),
+             bool(row.file and row.file.get_path() and row.visibility)),
+            ("Remove", lambda: self.app.remove_document(
+                row.file, row.document, self.window), True),
+            ("Move to Trash…", lambda: self._confirm_trash(row), row.file is not None)))
+
+    def _on_agenda_context_pressed(self, gesture, _count, x, y, row, view):
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self._show_agenda_menu(row, view, x, y)
+
+    def _on_agenda_context_key(self, _controller, keyval, _keycode, state, row, view):
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if keyval == Gdk.KEY_Menu or (
+                keyval == Gdk.KEY_F10 and modifiers == Gdk.ModifierType.SHIFT_MASK):
+            self._show_agenda_menu(row, view, 0, row.get_height())
+            return True
+        return False
+
+    def _show_agenda_menu(self, row, view, x, y):
+        self._show_context_menu(row, x, y, (
+            ("Edit…", lambda: self.app.edit_custom_agenda(self.window, view), True),
+            ("Delete…", lambda: self.app.confirm_delete_custom_agenda(self.window, view), True)))
+
+    def _show_context_menu(self, row, x, y, actions):
         if self._context_menu:
             self._context_menu.popdown()
             return
@@ -289,13 +329,7 @@ class UtilityPane(Adw.Bin):
         rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
         popover.set_pointing_to(rect)
         buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        for label, callback, enabled in (
-                ("Rename…", lambda: self._rename_file(row), row.file is not None),
-                ("Change Color…", lambda: self._choose_file_color(row),
-                 bool(row.file and row.file.get_path() and row.visibility)),
-                ("Remove", lambda: self.app.remove_document(
-                    row.file, row.document, self.window), True),
-                ("Move to Trash…", lambda: self._confirm_trash(row), row.file is not None)):
+        for label, callback, enabled in actions:
             button = Gtk.Button(css_classes=["flat"], sensitive=enabled)
             button.set_child(Gtk.Label(label=label, xalign=0, css_classes=["file-action-label"]))
 
@@ -313,6 +347,7 @@ class UtilityPane(Adw.Bin):
                 popover.unparent()
                 self._context_menu = None
                 self.refresh()
+                self.refresh_agendas()
                 return GLib.SOURCE_REMOVE
             GLib.idle_add(cleanup)
 

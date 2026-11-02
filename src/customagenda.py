@@ -189,20 +189,7 @@ class AgendaEditor(Adw.Dialog):
         self.close()
 
     def _delete(self, *_):
-        confirm = Adw.AlertDialog(
-            heading="Delete Agenda View?", body=f"Delete “{self.original.title}”? "
-            "Your Org files will not be changed.", close_response="cancel")
-        confirm.add_response("cancel", "_Cancel")
-        confirm.add_response("delete", "_Delete")
-        confirm.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-
-        def response(_dialog, result):
-            if result == "delete":
-                if self.app.delete_custom_agenda(self.original):
-                    self.close()
-
-        confirm.connect("response", response)
-        confirm.present(self.window)
+        self.app.confirm_delete_custom_agenda(self.window, self.original, then=self.close)
 
 
 class AgendaChooser(Adw.Dialog):

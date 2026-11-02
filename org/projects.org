@@ -20,13 +20,13 @@ This task does not count toward the top-level project's cookies.
 DEADLINE: <2026-11-06 Fri>
 Try C-c C-c on this heading to edit its tags.
 
-* Shopping [2/4] [50%] :home:
+* Shopping [3/4] [75%] :home:
 - [X] Coffee
 - [X] Bread
-- [ ] Fruit
-- [-] Supplies [1/2]
+- [X] Fruit
+- [ ] Supplies [2/2]
   - [X] Pens
-  - [ ] Paper
+  - [X] Paper
 
 * Completed checklist [2/2] [100%] :demo:
 Completed cookies appear green.

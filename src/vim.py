@@ -1950,6 +1950,21 @@ class GnorgApplication(Adw.Application):
         self.custom_agendas = views
         self._refresh_custom_agendas(original, view)
 
+    def confirm_delete_custom_agenda(self, window, view, then=None):
+        dialog = Adw.AlertDialog(
+            heading="Delete Agenda View?", body=f"Delete “{view.title}”? "
+            "Your Org files will not be changed.", close_response="cancel")
+        dialog.add_response("cancel", "_Cancel")
+        dialog.add_response("delete", "_Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+
+        def response(_dialog, result):
+            if result == "delete" and self.delete_custom_agenda(view) and then:
+                then()
+
+        dialog.connect("response", response)
+        dialog.present(window)
+
     def delete_custom_agenda(self, view):
         views = [saved for saved in self.custom_agendas if saved != view]
         if self.settings and not self.settings.set_string("custom-agenda-views", encode_views(views)):

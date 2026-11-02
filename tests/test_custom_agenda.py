@@ -8,10 +8,76 @@ from unittest.mock import Mock, patch
 from editor_test_case import EditorTestCase
 from customagenda import AgendaChooser, AgendaEditor, CustomAgenda, decode_views, encode_views
 import org
-from vim import APP_ID, Gdk, Gio, GnorgApplication
+from vim import APP_ID, Gdk, Gio, GnorgApplication, Gtk
 
 
 class CustomAgendaTests(EditorTestCase):
+    def test_list_row_activation_opens_builtin_and_custom_agendas(self):
+        tab = self.app.new_tab()
+        view = CustomAgenda("x", "Example")
+        self.app.save_custom_agenda(view)
+        pane = tab.window.utility_pane
+        pane.agenda_listbox.emit("row-activated", pane.agenda_rows[1])
+        self.assertIs(tab.window.active_view, tab.window.weekly_agenda)
+        self.assertEqual(tab.window.weekly_agenda.custom, view)
+        tab.window.show_files()
+        pane.agenda_listbox.emit("row-activated", pane.agenda_rows[0])
+        self.assertIs(tab.window.active_view, tab.window.weekly_agenda)
+        self.assertIsNone(tab.window.weekly_agenda.custom)
+
+    def test_agenda_rows_share_file_row_padding_and_spacing(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Example")
+        pane = tab.window.utility_pane
+        pane.refresh()
+        self.app.save_custom_agenda(CustomAgenda("x", "Example"))
+        file_content = pane.rows[0].get_child()
+        for row in pane.agenda_rows:
+            content = row.get_child()
+            self.assertEqual(content.get_margin_start(), file_content.get_margin_start())
+            self.assertEqual(content.get_margin_end(), file_content.get_margin_end())
+            self.assertEqual(content.get_spacing(), file_content.get_spacing())
+            self.assertEqual(content.get_first_child().get_size_request()[0], 16)
+
+    def test_agenda_context_menu_edit_and_confirmed_delete(self):
+        tab = self.app.new_tab()
+        tab.present()
+        view = CustomAgenda("x", "Example")
+        self.app.save_custom_agenda(view)
+        pane = tab.window.utility_pane
+        row = pane.agenda_rows[1]
+        gesture = Mock()
+        pane._on_agenda_context_pressed(gesture, 1, 10, 10, row, view)
+        gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+
+        def buttons():
+            result = []
+            child = pane._context_menu.get_child().get_first_child()
+            while child:
+                result.append(child)
+                child = child.get_next_sibling()
+            return result
+
+        self.assertEqual([button.get_child().get_label() for button in buttons()],
+                         ["Edit…", "Delete…"])
+        self.assertTrue(all(button.get_child().get_xalign() == 0 for button in buttons()))
+        with patch.object(self.app, "edit_custom_agenda") as edit:
+            buttons()[0].emit("clicked")
+            edit.assert_called_once_with(tab.window, view)
+        self.wait_for(lambda: pane._context_menu is None)
+        row = pane.agenda_rows[1]
+        self.assertTrue(pane._on_agenda_context_key(
+            None, Gdk.KEY_F10, 0, Gdk.ModifierType.SHIFT_MASK, row, view))
+        buttons()[1].emit("clicked")
+        tab.window.get_visible_dialog().emit("response", "cancel")
+        self.assertEqual(self.app.custom_agendas, [view])
+        self.wait_for(lambda: pane._context_menu is None)
+        pane._show_agenda_menu(pane.agenda_rows[1], view, 10, 10)
+        buttons()[1].emit("clicked")
+        tab.window.get_visible_dialog().emit("response", "delete")
+        self.wait_for(lambda: pane._context_menu is None and len(pane.agenda_rows) == 1)
+        self.assertEqual(self.app.custom_agendas, [])
+
     def settings(self):
         directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
         source = Gio.SettingsSchemaSource.new_from_directory(
@@ -82,7 +148,7 @@ class CustomAgendaTests(EditorTestCase):
             self.assertEqual(view.kind, "week")
             self.assertEqual(decode_views(settings.get_string("custom-agenda-views")), [view])
             self.assertEqual([row.get_title() for row in pane.agenda_rows], ["Agenda", "My Work"])
-            pane.agenda_rows[1].emit("activated")
+            pane.agenda_listbox.emit("row-activated", pane.agenda_rows[1])
             self.assertEqual(tab.window.weekly_agenda.custom, view)
             self.assertEqual(tab.window.get_title(), "My Work – Gnorg")
             with self.assertRaisesRegex(ValueError, "already in use"):
