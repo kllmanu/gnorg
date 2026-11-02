@@ -401,6 +401,46 @@ class TabTests(unittest.TestCase):
         self.assertEqual(tab.get_text(), text)
         self.assertFalse(tab.buffer.get_modified())
 
+    def test_visual_selection_from_mid_heading_in_startup_overview(self):
+        text = ("#+TITLE: Overview\n#+STARTUP: overview\n\n"
+                "* TODO First task\n** Child\nBody\n\n"
+                "* Second task\nSCHEDULED: <2026-11-03 Tue>\n"
+                "* Third task\nBody\n* Last task\nHidden tail\n")
+        for mode, modifiers in ((Gdk.KEY_v, Gdk.ModifierType(0)),
+                                (Gdk.KEY_V, Gdk.ModifierType.SHIFT_MASK)):
+            for column in (0, 3, 10):
+                with self.subTest(mode=mode, column=column):
+                    tab = self.app.new_tab()
+                    tab.buffer.set_text(text)
+                    tab.buffer.set_modified(False)
+                    tab.org_fold.refresh()
+                    tab.buffer.place_cursor(tab.buffer.get_iter_at_line_offset(3, column)[1])
+                    tab.present()
+                    self.wait_for(tab.view.get_mapped)
+                    display = Gdk.Display.get_default()
+
+                    def press(keyval, state=Gdk.ModifierType(0)):
+                        key = display.map_keyval(keyval)[1][0]
+                        tab.vim.filter_key(True, tab.window.get_surface(),
+                                           display.get_default_seat().get_keyboard(),
+                                           0, key.keycode, state, key.group)
+
+                    press(mode, modifiers)
+                    for keyval, expected in ((Gdk.KEY_j, 7), (Gdk.KEY_j, 9),
+                                             (Gdk.KEY_j, 11), (Gdk.KEY_k, 9),
+                                             (Gdk.KEY_k, 7), (Gdk.KEY_k, 3)):
+                        press(keyval)
+                        mark = tab.org_fold._visual_cursor
+                        self.assertIsNotNone(mark)
+                        self.assertEqual(tab.buffer.get_iter_at_mark(mark).get_line(), expected)
+                        if mode == Gdk.KEY_V:
+                            first, last = tab.buffer.get_selection_bounds()
+                            self.assertEqual((first.get_line(), first.get_line_offset()), (3, 0))
+                            self.assertEqual((last.get_line(), last.get_line_offset()),
+                                             ({3: 4, 7: 9, 9: 11, 11: 13}[expected], 0))
+                    self.assertEqual(tab.get_text(), text)
+                    self.assertFalse(tab.buffer.get_modified())
+
     def test_jj_escape_is_inactive_in_visual_mode(self):
         tab = self.app.new_tab()
         tab.buffer.set_text("* Example")

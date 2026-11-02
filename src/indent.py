@@ -86,9 +86,16 @@ class OrgFold:
             return
         cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
         # GtkSource visual modes move a private right-gravity mark, not "insert".
+        candidates = []
+        for iterator in (cursor, *self.buffer.get_selection_bounds()):
+            start = iterator.copy()
+            start.set_line_offset(0)
+            while True:
+                candidates.extend(start.get_marks())
+                if start.ends_line() or not start.forward_char():
+                    break
         self._visual_cursor = next(
-            (mark for iterator in (cursor, *self.buffer.get_selection_bounds())
-             for mark in iterator.get_marks()
+            (mark for mark in candidates
              if mark.get_name() is None and not mark.get_left_gravity()), None)
         if self._visual_cursor:
             self._visual_cursor_offset = self.buffer.get_iter_at_mark(
@@ -127,14 +134,17 @@ class OrgFold:
         cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
         offset = cursor.get_offset()
         if cursor.has_tag(self.hidden):
-            forward = offset >= self._cursor_offset
+            # A visual endpoint includes the folded body of its last selected heading,
+            # even when the private visual cursor is moving upward.
+            forward = self._visual_cursor is not None or offset >= self._cursor_offset
             target = cursor.copy()
             if forward:
                 target.forward_to_tag_toggle(self.hidden)
             else:
                 target.backward_to_tag_toggle(self.hidden)
                 target.backward_char()
-            if target.is_end() or target.has_tag(self.hidden):
+            if ((target.is_end() and self._visual_cursor is None)
+                    or target.has_tag(self.hidden)):
                 target = cursor.copy()
                 target.backward_to_tag_toggle(self.hidden)
                 target.backward_char()
