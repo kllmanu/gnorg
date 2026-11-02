@@ -770,10 +770,26 @@ class EditorWindow(Adw.ApplicationWindow):
         self.add_controller(keys)
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if modifiers == Gdk.ModifierType.ALT_MASK:
+            if keyval == Gdk.KEY_o:
+                pages = self.stack.get_pages()
+                current = next(i for i in range(pages.get_n_items())
+                               if pages.get_item(i).get_child() is self.stack.get_visible_child())
+                page = pages.get_item((current + 1) % pages.get_n_items())
+                self.stack.set_visible_child(page.get_child())
+                return True
+            if (keyval in (Gdk.KEY_h, Gdk.KEY_l)
+                    and self.stack.get_visible_child_name() == "files"):
+                page = self.tabs.get_selected_page()
+                if page is not None:
+                    direction = -1 if keyval == Gdk.KEY_h else 1
+                    index = (self.tabs.get_page_position(page) + direction) % self.tabs.get_n_pages()
+                    self.tabs.set_selected_page(self.tabs.get_nth_page(index))
+                return True
         tab = self.active_view
         if tab is None:
             return False
-        modifiers = state & Gtk.accelerator_get_default_mod_mask()
         if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
                 and keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab)
                 and modifiers in (Gdk.ModifierType(0), Gdk.ModifierType.SHIFT_MASK)):

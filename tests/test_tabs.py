@@ -52,6 +52,40 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(first, self.app.editor_tabs())
 
+    def test_alt_navigation_wraps_tabs_and_cycles_views_without_changing_hidden_tabs(self):
+        first = self.app.new_tab()
+        second = self.app.new_tab()
+        window = first.window
+        second.present()
+
+        def press(key, modifiers=Gdk.ModifierType.ALT_MASK):
+            return window._on_key_pressed(None, key, 0, modifiers)
+
+        self.assertTrue(press(Gdk.KEY_l))
+        self.assertIs(window.active_tab, first)
+        self.assertTrue(press(Gdk.KEY_h))
+        self.assertIs(window.active_tab, second)
+        self.assertTrue(press(Gdk.KEY_h))
+        self.assertIs(window.active_tab, first)
+        self.assertTrue(press(Gdk.KEY_l))
+        self.assertIs(window.active_tab, second)
+        for expected in ("weekly-agenda", "agenda", "files"):
+            self.assertTrue(press(Gdk.KEY_o))
+            self.assertEqual(window.stack.get_visible_child_name(), expected)
+            if expected != "files":
+                self.assertFalse(press(Gdk.KEY_h))
+                self.assertFalse(press(Gdk.KEY_l))
+                self.assertEqual(window.stack.get_visible_child_name(), expected)
+                self.assertIs(window.active_tab, second)
+        self.assertIs(window.active_view, second)
+        self.assertFalse(press(Gdk.KEY_o, Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.CONTROL_MASK))
+
+    def test_alt_navigation_with_single_tab(self):
+        tab = self.app.new_tab()
+        for key in (Gdk.KEY_h, Gdk.KEY_l):
+            self.assertTrue(tab.window._on_key_pressed(None, key, 0, Gdk.ModifierType.ALT_MASK))
+            self.assertIs(tab.window.active_tab, tab)
+
     def test_heading_cycle_and_startup_visibility(self):
         text = "* Parent\nBody\n** Child\nChild body\n*** Grandchild\nDetails\n* Next\nTail"
         tab = self.app.new_tab()
