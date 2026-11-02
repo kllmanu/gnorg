@@ -381,11 +381,12 @@ class OrgFold:
 
 
 class OrgTodoInteraction:
-    """Make heading task keywords clickable without changing text selection elsewhere."""
+    """Make task keywords and list checkboxes clickable without selecting other text."""
 
-    def __init__(self, view, cycle):
+    def __init__(self, view, cycle, toggle_checkbox):
         self.view = view
         self.cycle = cycle
+        self.toggle_checkbox = toggle_checkbox
         self._hovering = False
         motion = Gtk.EventControllerMotion(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         motion.connect("enter", self._motion)
@@ -409,11 +410,16 @@ class OrgTodoInteraction:
             end.forward_to_line_end()
         text = buffer.get_text(start, end, True)
         match = org.HEADING_KEYWORD_RE.match(text)
-        if match is None or match[2] is None:
+        if match is not None and match[2] is not None:
+            offset, text = match.start(2), match[2]
+        elif checkbox := org.CHECKBOX_RE.match(text):
+            offset = checkbox.start(2) - 1
+            text = text[offset:checkbox.end()]
+        else:
             return None
-        keyword = buffer.get_iter_at_line_offset(start.get_line(), match.start(2))[1]
+        keyword = buffer.get_iter_at_line_offset(start.get_line(), offset)[1]
         rect = self.view.get_iter_location(keyword)
-        layout = self.view.create_pango_layout(match[2])
+        layout = self.view.create_pango_layout(text)
         attributes = Pango.AttrList()
         for tag in sorted(keyword.get_tags(), key=lambda tag: tag.get_priority()):
             if tag.props.weight_set:
@@ -438,7 +444,14 @@ class OrgTodoInteraction:
         line = self._keyword_at(x, y)
         if line is not None:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-            self.cycle(line)
+            buffer = self.view.get_buffer()
+            start = buffer.get_iter_at_line(line)[1]
+            end = start.copy()
+            end.forward_to_line_end()
+            if org.CHECKBOX_RE.match(buffer.get_text(start, end, True)):
+                self.toggle_checkbox(line)
+            else:
+                self.cycle(line)
 
 
 class OrgTagAlign:

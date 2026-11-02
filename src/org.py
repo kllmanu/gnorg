@@ -66,9 +66,12 @@ def new_item_prefix(line):
     checkbox = "[ ] " if re.match(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+\[[ Xx-]\]", line) else ""
     return indent + bullet + " " + checkbox
 
+CHECKBOX_RE = re.compile(r"^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ Xx-])(\])")
+
+
 def toggle_checkbox(line):
     """Toggle a list checkbox, treating a partial checkbox as unchecked."""
-    match = re.match(r"^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ Xx-])(\])", line)
+    match = CHECKBOX_RE.match(line)
     if match is None:
         return None
     state = " " if match[2] in ("X", "x") else "X"

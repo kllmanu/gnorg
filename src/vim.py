@@ -123,7 +123,8 @@ class EditorTab(Adw.Bin):
         self.org_fold = OrgFold(self.view)
         self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
-        self.org_todo_interaction = OrgTodoInteraction(self.view, self._cycle_todo_at_line)
+        self.org_todo_interaction = OrgTodoInteraction(
+            self.view, self._cycle_todo_at_line, self._toggle_checkbox_at_line)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() in (
                 GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
@@ -496,6 +497,10 @@ class EditorTab(Adw.Bin):
         popover.popup()
         entry.grab_focus()
         entry.select_region(0, -1)
+
+    def _toggle_checkbox_at_line(self, line):
+        self.buffer.place_cursor(self.buffer.get_iter_at_line(line)[1])
+        self.toggle_checkbox()
 
     def toggle_checkbox(self):
         line = self._cursor_line()

@@ -7,6 +7,37 @@ from vim import GLib, Gtk
 
 
 class EditorTests(EditorTestCase):
+    def test_clicking_list_checkboxes_toggles_with_pointer_and_undo(self):
+        tab = self.app.new_tab()
+        text = "* Tasks\n- [ ] First\n  1. [X] Second\n+ [-] Third\nPlain [ ] text\n"
+        tab.buffer.set_text(text)
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+        interaction = tab.org_todo_interaction
+        for line, column, expected in ((1, 2, "- [X] First"),
+                                       (2, 5, "  1. [ ] Second"),
+                                       (3, 2, "+ [X] Third")):
+            with self.subTest(line=line):
+                def point():
+                    rect = tab.view.get_iter_location(
+                        tab.buffer.get_iter_at_line_offset(line, column)[1])
+                    return tab.view.buffer_to_window_coords(
+                        Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+
+                self.wait_for(lambda: interaction._keyword_at(*point()) == line)
+                interaction._motion(None, *point())
+                self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
+                gesture = Mock()
+                interaction._pressed(gesture, 1, *point())
+                gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+                self.assertEqual(tab.get_text().splitlines()[line], expected)
+                tab.buffer.undo()
+                self.assertEqual(tab.get_text(), text)
+        rect = tab.view.get_iter_location(tab.buffer.get_iter_at_line_offset(4, 6)[1])
+        point = tab.view.buffer_to_window_coords(
+            Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+        self.assertIsNone(interaction._keyword_at(*point))
+
     def test_clicking_todo_keyword_cycles_and_supports_undo(self):
         tab = self.app.new_tab()
         original = "* Parent\n** TODO Task :work:\nBody TODO is not a heading\n"
