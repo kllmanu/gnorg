@@ -23,10 +23,54 @@ class OrgFold:
         self._indicator_styles = {}
         self._cursor_offset = 0
         self._moving_cursor = False
+        self._visual_cursor = None
+        self._visual_cursor_offset = 0
         view.add_tick_callback(self._layout_indicators)
         self.buffer.connect("changed", lambda *_: self.queue_refresh())
         self.buffer.connect("notify::cursor-position", self._skip_hidden_cursor)
+        self.buffer.connect("mark-set", self._skip_hidden_visual_cursor)
         view.connect("destroy", self._destroy)
+
+    def track_visual_cursor(self, active):
+        if not active:
+            self._visual_cursor = None
+            return
+        if self._visual_cursor and not self._visual_cursor.get_deleted():
+            return
+        cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        # GtkSource's linewise visual mode moves a separate cursor mark, not "insert".
+        self._visual_cursor = next(
+            (mark for mark in cursor.get_marks()
+             if mark.get_name() is None and mark.get_visible()), None)
+        if self._visual_cursor:
+            self._visual_cursor_offset = cursor.get_offset()
+
+    def _skip_hidden_visual_cursor(self, _buffer, iterator, mark):
+        if self._moving_cursor or mark is not self._visual_cursor:
+            return
+        offset = iterator.get_offset()
+        if iterator.has_tag(self.hidden):
+            target = iterator.copy()
+            if offset >= self._visual_cursor_offset:
+                target.forward_to_tag_toggle(self.hidden)
+            else:
+                target.backward_char()
+                if target.has_tag(self.hidden):
+                    target.backward_to_tag_toggle(self.hidden)
+                    target.backward_char()
+                target.set_line_offset(0)
+            if target.is_end() or target.has_tag(self.hidden):
+                target = iterator.copy()
+                target.backward_char()
+                if target.has_tag(self.hidden):
+                    target.backward_to_tag_toggle(self.hidden)
+                    target.backward_char()
+                target.set_line_offset(0)
+            self._moving_cursor = True
+            self.buffer.move_mark(mark, target)
+            self._moving_cursor = False
+            offset = target.get_offset()
+        self._visual_cursor_offset = offset
 
     def _skip_hidden_cursor(self, *_):
         if self._moving_cursor:

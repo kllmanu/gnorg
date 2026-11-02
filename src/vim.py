@@ -120,6 +120,9 @@ class EditorTab(Adw.Bin):
         self._setup_style()
         self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
         self.org_fold = OrgFold(self.view)
+        self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
+            self.vim.get_command_bar_text() == GLib.dgettext(
+                "gtksourceview-5", "-- VISUAL LINE --")))
 
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())

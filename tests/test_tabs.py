@@ -176,6 +176,41 @@ class TabTests(unittest.TestCase):
         self.assertEqual(self.app.escape_sequence, "jk")
         dialog.close()
 
+    def test_visual_line_selection_skips_folded_bodies_in_both_directions(self):
+        tab = self.app.new_tab()
+        text = "* First\nBody one\nBody two\n* Second\nBody three\n* Third\n"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.org_fold.cycle(global_cycle=True)
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+        display = Gdk.Display.get_default()
+
+        def press(keyval, modifiers=Gdk.ModifierType(0)):
+            key = display.map_keyval(keyval)[1][0]
+            tab.vim.filter_key(True, tab.window.get_surface(),
+                               display.get_default_seat().get_keyboard(), 0, key.keycode,
+                               modifiers, key.group)
+
+        press(Gdk.KEY_V, Gdk.ModifierType.SHIFT_MASK)
+        for keyval, expected_line in (
+                (Gdk.KEY_j, 3), (Gdk.KEY_j, 5),
+                (Gdk.KEY_k, 3), (Gdk.KEY_k, 0), (Gdk.KEY_j, 3)):
+            press(keyval)
+            cursor = tab.org_fold._visual_cursor
+            self.assertIsNotNone(cursor)
+            self.assertEqual(tab.buffer.get_iter_at_mark(cursor).get_line(), expected_line)
+            self.assertTrue(tab.buffer.get_has_selection())
+            self.assertIn("VISUAL LINE", tab.vim.get_command_bar_text())
+        self.assertEqual(tab.get_text(), text)
+        self.assertFalse(tab.buffer.get_modified())
+        press(Gdk.KEY_d)
+        self.assertEqual(tab.get_text(), "* Third\n")
+        self.assertTrue(tab.buffer.get_modified())
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), text)
+
     def test_jj_escape_is_inactive_in_visual_mode(self):
         tab = self.app.new_tab()
         tab.buffer.set_text("* Example")
