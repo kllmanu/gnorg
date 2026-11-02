@@ -420,7 +420,8 @@ class EditorTab(Adw.Bin):
         else:
             edit = org.relevel_heading(lines, heading, direction)
             if edit is None:
-                self.toast("Cannot promote a top-level heading")
+                self.toast("No preceding sibling to demote under" if direction > 0
+                           else "Cannot promote a top-level heading")
                 return
             target = heading
             if org.parse_heading(lines[cursor.get_line()]):

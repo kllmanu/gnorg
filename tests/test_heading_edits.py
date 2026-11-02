@@ -31,12 +31,21 @@ class HeadingEditTests(EditorTestCase):
         self.assertIsNone(org.move_heading(lines, 5, 1))
 
     def test_relevel_subtree_keeps_body_and_literal_stars_unchanged(self):
-        lines = ["* Parent", "** Task", "Body", "#+BEGIN_SRC org", "* Literal",
+        lines = ["* Parent", "** Previous", "** Task", "Body", "#+BEGIN_SRC org", "* Literal",
                  "#+END_SRC", "*** Child", "* Next"]
-        updated = org.apply_edit(lines, org.relevel_heading(lines, 1, 1))
-        self.assertEqual(updated, ["* Parent", "*** Task", "Body", "#+BEGIN_SRC org",
+        updated = org.apply_edit(lines, org.relevel_heading(lines, 2, 1))
+        self.assertEqual(updated, ["* Parent", "** Previous", "*** Task", "Body", "#+BEGIN_SRC org",
                                    "* Literal", "#+END_SRC", "**** Child", "* Next"])
         self.assertIsNone(org.relevel_heading(lines, 0, -1))
+
+    def test_demote_requires_a_preceding_sibling_parent(self):
+        lines = ["* Parent", "** First", "*** Child", "** Second", "* Next", "** Only"]
+        for line in (0, 1, 2, 5):
+            with self.subTest(line=line):
+                self.assertIsNone(org.relevel_heading(lines, line, 1))
+        updated = org.apply_edit(lines, org.relevel_heading(lines, 3, 1))
+        self.assertEqual(updated[3], "*** Second")
+        self.assertEqual(org.apply_edit(updated, org.relevel_heading(updated, 3, -1)), lines)
 
     def test_alt_arrows_move_and_relevel_with_cursor_and_undo(self):
         tab = self.app.new_tab()
@@ -54,6 +63,9 @@ class HeadingEditTests(EditorTestCase):
         self.assertEqual(tab.get_text(), text)
         tab.buffer.place_cursor(tab.buffer.get_iter_at_line_offset(0, 3)[1])
         tab.window._on_key_pressed(None, Gdk.KEY_Right, 0, Gdk.ModifierType.ALT_MASK)
-        self.assertEqual(tab.get_text(), "** First\nBody\n*** Child\nDetails\n* Second\nOther\n")
+        self.assertEqual(tab.get_text(), text)
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line_offset(4, 3)[1])
+        tab.window._on_key_pressed(None, Gdk.KEY_Right, 0, Gdk.ModifierType.ALT_MASK)
+        self.assertEqual(tab.get_text(), "* First\nBody\n** Child\nDetails\n** Second\nOther\n")
         tab.window._on_key_pressed(None, Gdk.KEY_Left, 0, Gdk.ModifierType.ALT_MASK)
         self.assertEqual(tab.get_text(), text)

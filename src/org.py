@@ -665,11 +665,15 @@ def move_heading(lines, line, direction):
 
 
 def relevel_heading(lines, line, direction):
-    """Promote/demote a complete subtree, never promoting above level one."""
+    """Relevel a subtree without promoting above level one or skipping a parent."""
     headings = _structural_headings(lines)
     level = next((depth for index, depth in headings if index == line), None)
     if level is None or level + direction < 1:
         return None
+    if direction > 0:
+        previous = next((depth for index, depth in reversed(headings) if index < line), 0)
+        if previous < level:
+            return None
     end = next((index for index, depth in headings if index > line and depth <= level), len(lines))
     updated = lines[line:end].copy()
     for index, depth in headings:
