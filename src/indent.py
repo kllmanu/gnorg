@@ -367,8 +367,27 @@ class OrgFold:
 class OrgTagAlign:
     """Stretch heading tag separators to the viewport edge without editing text."""
 
-    def __init__(self, view):
+    BUTTON_SPACE = 28
+
+    def __init__(self, view, edit_tags):
         self.view = view
+        self.edit_tags = edit_tags
+        self.buttons = {}
+        self._button_pool = []
+        self._pointer = None
+        self._hover_regions = {}
+        self._tag_starts = {}
+        self._hovering_tags = False
+        motion = Gtk.EventControllerMotion(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        motion.connect("enter", self._on_motion)
+        motion.connect("motion", self._on_motion)
+        motion.connect("leave", self._on_leave)
+        view.add_controller(motion)
+        css = Gtk.CssProvider()
+        css.load_from_string(
+            ".tag-edit-button { padding: 0; min-width: 24px; min-height: 24px; }")
+        Gtk.StyleContext.add_provider_for_display(
+            view.get_display(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.buffer = view.get_buffer()
         self._tags = []
         self._lines = []
@@ -389,6 +408,10 @@ class OrgTagAlign:
             self._dirty = True
         if self._dirty:
             self._dirty = False
+            for button in self._button_pool:
+                button.set_visible(False)
+            self.buttons.clear()
+            self._tag_starts.clear()
             for tag in self._tags:
                 self.buffer.remove_tag(tag, *self.buffer.get_bounds())
             self._lines = []
@@ -409,20 +432,77 @@ class OrgTagAlign:
                 end = self.buffer.get_iter_at_line_offset(line, match.start() + count)[1]
                 self.buffer.apply_tag(tag, start, end)
                 self._lines.append((line, len(text.rstrip()), count, tag))
+                self._tag_starts[line] = match.start() + count
+                if index == len(self._button_pool):
+                    button = Gtk.Button(icon_name="document-edit-symbolic",
+                                        tooltip_text="Edit heading tags",
+                                        css_classes=["flat", "tag-edit-button"])
+                    button.set_size_request(24, 24)
+                    button.set_cursor_from_name("pointer")
+                    button.set_opacity(0)
+                    button.set_can_target(False)
+                    button.connect("clicked", self._edit_clicked)
+                    self.view.add_overlay(button, 0, 0)
+                    self._button_pool.append(button)
+                button = self._button_pool[index]
+                self.buttons[line] = button
         # Leave room for TextView's end-of-line caret in the scrollable extent.
-        right = self.view.get_visible_rect().width - self.view.get_right_margin() - 2
+        right = (self.view.get_visible_rect().width - self.view.get_right_margin()
+                 - 2 - self.BUTTON_SPACE)
+        self._hover_regions.clear()
         for line, end, count, tag in self._lines:
             iterator = self.buffer.get_iter_at_line_offset(line, end)[1]
             folded = self.buffer.get_tag_table().lookup("org-fold-hidden")
             if folded is not None and iterator.has_tag(folded):
+                self.buttons[line].set_visible(False)
                 continue
+            button = self.buttons[line]
+            button.set_visible(True)
             x = self.view.get_iter_location(iterator).x
             delta = right - x
             if abs(delta) > 1:
                 spacing = max(0, tag.props.letter_spacing + round(delta * Pango.SCALE / count))
                 if spacing != tag.props.letter_spacing:
                     tag.props.letter_spacing = spacing
+            rect = self.view.get_iter_location(iterator)
+            self.view.move_overlay(button, rect.x + 4, rect.y)
+            first = self.view.get_iter_location(self.buffer.get_iter_at_line_offset(
+                line, self._tag_starts[line])[1])
+            x, y = self.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, first.x, rect.y)
+            last_x, _ = self.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, rect.x + 4 + max(button.get_width(), 24), rect.y)
+            self._hover_regions[line] = (x, y, last_x, y + max(rect.height, 24))
+        self._update_hover()
         return GLib.SOURCE_CONTINUE
+
+    def _on_motion(self, _controller, x, y):
+        self._pointer = (x, y)
+        self._update_hover()
+
+    def _on_leave(self, *_):
+        self._pointer = None
+        self._update_hover()
+
+    def _update_hover(self):
+        hovered = None
+        if self._pointer is not None:
+            x, y = self._pointer
+            hovered = next((line for line, (left, top, right, bottom)
+                            in self._hover_regions.items()
+                            if left <= x < right and top <= y < bottom), None)
+        for line, button in self.buttons.items():
+            active = line == hovered
+            button.set_opacity(1 if active else 0)
+            button.set_can_target(active)
+        hovering = hovered is not None
+        if hovering != self._hovering_tags:
+            self.view.set_cursor_from_name("pointer" if hovering else "text")
+            self._hovering_tags = hovering
+
+    def _edit_clicked(self, button):
+        line = next(line for line, widget in self.buttons.items() if widget is button)
+        self.edit_tags(line)
 
 
 class OrgIndent:

@@ -122,7 +122,7 @@ class EditorTab(Adw.Bin):
         self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
         self.org_fold = OrgFold(self.view)
         self.org_line_numbers = OrgLineNumbers(self.view)
-        self.org_tag_align = OrgTagAlign(self.view)
+        self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() in (
                 GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
@@ -394,6 +394,10 @@ class EditorTab(Adw.Bin):
             self.edit_tags()
         else:
             self.toggle_checkbox()
+
+    def _edit_tags_at_line(self, line):
+        self.buffer.place_cursor(self.buffer.get_iter_at_line(line)[1])
+        self.edit_tags()
 
     def edit_tags(self):
         if self._active_tag_popover is not None:
