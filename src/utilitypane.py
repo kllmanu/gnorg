@@ -106,6 +106,20 @@ class UtilityPane(Adw.Bin):
             wrap=True, margin_start=18, margin_end=18, margin_top=12,
             css_classes=["dim-label"])
         content.append(self.empty)
+        agenda_heading = Gtk.Box(spacing=6, margin_start=18, margin_end=12,
+                                 margin_top=18, margin_bottom=6)
+        agenda_heading.append(Gtk.Label(label="Agenda", xalign=0, hexpand=True,
+                                        css_classes=["heading"]))
+        self.new_agenda_button = Gtk.Button(
+            icon_name="list-add-symbolic", tooltip_text="New Agenda View", css_classes=["flat"])
+        self.new_agenda_button.connect(
+            "clicked", lambda *_: self.app.edit_custom_agenda(self.window))
+        agenda_heading.append(self.new_agenda_button)
+        content.append(agenda_heading)
+        self.agenda_listbox = Gtk.ListBox(
+            selection_mode=Gtk.SelectionMode.NONE, css_classes=["navigation-sidebar"])
+        content.append(self.agenda_listbox)
+        self.refresh_agendas()
         header = Adw.HeaderBar(
             title_widget=Gtk.Label(label="Calendar", css_classes=["title"]),
             show_end_title_buttons=False)
@@ -113,6 +127,29 @@ class UtilityPane(Adw.Bin):
             child=content, hscrollbar_policy=Gtk.PolicyType.NEVER))
         toolbar.add_top_bar(header)
         self.set_child(toolbar)
+
+    def refresh_agendas(self):
+        self.agenda_listbox.remove_all()
+        self.agenda_rows = []
+        if self.app._custom_agenda_load_error:
+            self.agenda_listbox.append(Gtk.Label(
+                label=self.app._custom_agenda_load_error, wrap=True,
+                css_classes=["error"], margin_start=12, margin_end=12))
+        for view in (None, *self.app.custom_agendas):
+            row = Adw.ActionRow(title=view.title if view else "Agenda", activatable=True,
+                                use_markup=False)
+            row.add_prefix(Gtk.Label(label=view.key if view else "a",
+                                     css_classes=["monospace", "dim-label"]))
+            row.connect("activated", lambda _row, selected=view:
+                        self.app.show_weekly_agenda(self.window, custom=selected))
+            if view:
+                edit = Gtk.Button(icon_name="document-edit-symbolic", css_classes=["flat"],
+                                  valign=Gtk.Align.CENTER, tooltip_text="Edit Agenda View")
+                edit.connect("clicked", lambda _button, selected=view:
+                             self.app.edit_custom_agenda(self.window, selected))
+                row.add_suffix(edit)
+            self.agenda_listbox.append(row)
+            self.agenda_rows.append(row)
 
     def refresh(self):
         if self._dragging or self._context_menu is not None:
@@ -421,7 +458,8 @@ class UtilityPane(Adw.Bin):
         self._syncing = True
         try:
             if weekly:
-                self.app.show_weekly_agenda(self.window)
+                custom = self.window.weekly_agenda.custom if self.window.weekly_agenda else None
+                self.app.show_weekly_agenda(self.window, custom=custom)
                 view = self.window.weekly_agenda
             else:
                 self.app.show_agenda(self.window)

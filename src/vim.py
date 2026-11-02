@@ -19,6 +19,7 @@ from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgStartupEdit, OrgTagAlign, OrgTodoInteraction  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
+from customagenda import AgendaChooser, AgendaEditor, decode_views, encode_views  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Gnorg"
@@ -111,7 +112,7 @@ class EditorTab(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": app.show_agenda,
-            "C-c a": app.show_weekly_agenda,
+            "C-c a": lambda: app.choose_agenda(self.window),
             "C-c f": self.window.show_files,
             "C-c period": self.insert_timestamp,
             "C-x C-c": lambda: app.activate_action("quit", None),
@@ -1336,6 +1337,8 @@ class EditorWindow(Adw.ApplicationWindow):
         header.sidebar_toggle = button
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
+        if self.get_visible_dialog() is not None:
+            return False
         tab = self.active_view
         if isinstance(tab, EditorTab) and self.get_focus() is tab.view:
             if tab._on_escape_sequence(keyval, state):
@@ -1430,7 +1433,8 @@ class EditorWindow(Adw.ApplicationWindow):
         if self.stack.get_visible_child_name() == "agenda":
             self.get_application().show_agenda(self)
         elif self.stack.get_visible_child_name() == "weekly-agenda":
-            self.get_application().show_weekly_agenda(self)
+            self.get_application().show_weekly_agenda(
+                self, custom=self.weekly_agenda.custom if self.weekly_agenda else None)
         elif self.stack.get_visible_child_name() == "files" and self.active_tab is None:
             self.new_tab()
         self._on_selected()
@@ -1512,6 +1516,8 @@ class GnorgApplication(Adw.Application):
         self.hidden_agenda_files = set()
         self.removed_files = set()
         self.file_colors = {}
+        self.custom_agendas = []
+        self._custom_agenda_load_error = None
         self.utility_file_order = []
         self._saved_utility_file_order = []
         self.connect("window-removed", self._on_window_removed)
@@ -1529,6 +1535,11 @@ class GnorgApplication(Adw.Application):
 
         self.settings = self._load_settings()
         if self.settings:
+            try:
+                self.custom_agendas = decode_views(self.settings.get_string("custom-agenda-views"))
+            except ValueError as error:
+                self._custom_agenda_load_error = str(error)
+                print(f"{APP_NAME}: {error}", file=sys.stderr)
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
             self.editor_padding = self.settings.get_int("editor-padding")
@@ -1908,7 +1919,57 @@ class GnorgApplication(Adw.Application):
         if self.agenda is agenda:
             self.agenda = None
 
-    def show_weekly_agenda(self, window=None):
+    def choose_agenda(self, window=None):
+        window = window or self.get_active_window()
+        if window is None:
+            window = self.new_window()
+        chooser = AgendaChooser(self, window)
+        chooser.present(window)
+        return chooser
+
+    def edit_custom_agenda(self, window, original=None):
+        if self._custom_agenda_load_error:
+            window.active_view.toast(self._custom_agenda_load_error)
+            return None
+        dialog = AgendaEditor(self, window, original)
+        dialog.present(window)
+        return dialog
+
+    def save_custom_agenda(self, view, original=None):
+        if self._custom_agenda_load_error:
+            raise ValueError(self._custom_agenda_load_error)
+        if any(saved.key == view.key and saved != original for saved in self.custom_agendas):
+            raise ValueError("That agenda key is already in use.")
+        views = [view if saved == original else saved for saved in self.custom_agendas]
+        if original is None:
+            views.append(view)
+        elif original not in self.custom_agendas:
+            raise ValueError("This agenda view no longer exists.")
+        if self.settings and not self.settings.set_string("custom-agenda-views", encode_views(views)):
+            raise ValueError("Could not save custom agenda views.")
+        self.custom_agendas = views
+        self._refresh_custom_agendas(original, view)
+
+    def delete_custom_agenda(self, view):
+        views = [saved for saved in self.custom_agendas if saved != view]
+        if self.settings and not self.settings.set_string("custom-agenda-views", encode_views(views)):
+            self.get_active_window().active_view.toast("Could not delete custom agenda view.")
+            return False
+        self.custom_agendas = views
+        self._refresh_custom_agendas(view, None)
+        return True
+
+    def _refresh_custom_agendas(self, original, replacement):
+        for window in self.editor_windows():
+            window.utility_pane.refresh_agendas()
+            agenda = window.weekly_agenda
+            if agenda is not None and original is not None and agenda.custom == original:
+                agenda.set_custom(replacement)
+                agenda.refresh()
+                if window.active_view is agenda:
+                    agenda._update_title()
+
+    def show_weekly_agenda(self, window=None, custom=None):
         if window is None:
             active = self.get_active_window()
             windows = self.editor_windows()
@@ -1917,6 +1978,7 @@ class GnorgApplication(Adw.Application):
         if window.weekly_agenda is None:
             window.weekly_agenda = AgendaView(window, weekly=True)
             window.weekly_agenda_container.set_child(window.weekly_agenda)
+        window.weekly_agenda.set_custom(custom)
         window.weekly_agenda.refresh()
         window.weekly_agenda.present()
 

@@ -42,6 +42,18 @@ Use Tab to cycle folding, or Shift+Tab for the whole document.
 - Alt+Left / Alt+Right: promote or demote a subtree.
 - Ctrl+Alt+e: open the current saved file at the cursor in Emacs.
 - In Agenda: d for one day, w for the week, f/b to navigate, . for today.
+- C-c a opens the agenda chooser; then a opens the built-in Agenda.
+
+** Custom agendas :demo:
+Below Files, the Agenda section has a + button for creating saved views.
+Try a headline list with key w, title Work tasks, All tags work and TODO states
+TODO. It includes undated tasks too. Use C-c a followed by w to open it.
+
+Or create a Week agenda with Any tags work home to show dated items matching
+either tag. All filter fields combine with AND; states and priorities match
+any listed value. Empty fields match everything, including completed headings.
+Tag filters use each heading's own tags rather than inherited parent tags.
+The edit icon beside each saved view lets you change or delete it.
 
 ** Literal Org example
 Markup inside source blocks is not formatted or treated as real headings.

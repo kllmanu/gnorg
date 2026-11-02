@@ -16,6 +16,7 @@ gi.require_version("GtkSource", "5")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, GtkSource, Pango  # noqa: E402
 
 import org  # noqa: E402
+from customagenda import HeadlineItem  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from utilitypane import FILE_COLORS, file_color_index  # noqa: E402
@@ -80,6 +81,7 @@ class AgendaView(Adw.Bin):
         self.window = window
         self.app = window.get_application()
         self.weekly = weekly
+        self.custom = None
         self.name = "Agenda" if weekly else "Calendar"
         self.stack_name = "weekly-agenda" if weekly else "agenda"
         self.start = org.week_start(dt.date.today())
@@ -202,7 +204,7 @@ class AgendaView(Adw.Bin):
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": self.app.show_agenda,
-            "C-c a": self.app.show_weekly_agenda,
+            "C-c a": lambda: self.app.choose_agenda(self.window),
             "C-c f": self.window.show_files,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
@@ -240,6 +242,7 @@ class AgendaView(Adw.Bin):
     def present(self):
         self.window.stack.set_visible_child_name(self.stack_name)
         self._sync_calendar()
+        self._update_title()
         self.window.present()
         self.view.grab_focus()
 
@@ -255,10 +258,28 @@ class AgendaView(Adw.Bin):
     def show_zoom(self, zoom):
         show_zoom_toast(self, zoom)
 
+    @property
+    def headline_view(self):
+        return self.custom is not None and self.custom.kind == "headlines"
+
+    def set_custom(self, custom):
+        if self.custom == custom:
+            return
+        self.custom = custom
+        self.name = custom.title if custom else "Agenda"
+        self.title_widget.set_title(self.name)
+        self.day_view = custom is not None and custom.kind == "day"
+        self.start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
+        self.selected_item = None
+        self.entry_buttons = []
+        self.window.utility_pane.refresh_agendas()
+
     def refresh(self, keep_scroll=True):
         if self._active_date_popover is not None:
             return
         directory, files, entries = self.app.agenda_entries()
+        if self.custom:
+            entries = [entry for entry in entries if self.custom.matches(entry)]
         colors = set(self.app.file_colors.values())
         self.file_color_css.load_from_string("\n".join(
             f".calendar-event.custom-color-{color[1:]}:not(.deadline) {{ "
@@ -273,6 +294,10 @@ class AgendaView(Adw.Bin):
         self.today_button.set_tooltip_text("Go to today" if self.day_view else "Go to the current week")
         self.today_button.set_sensitive(
             self.start != (today if self.day_view else org.week_start(today)))
+        for button in (self.previous_button, self.next_button):
+            button.set_sensitive(not self.headline_view)
+        if self.headline_view:
+            self.today_button.set_sensitive(False)
         self.days = {
             date: [item for item in items if self.weekly or item.kind == "timestamp"]
             for date, items in org.build_agenda(entries, self.start, day_count, today).items()}
@@ -280,6 +305,7 @@ class AgendaView(Adw.Bin):
                         if self.weekly or not self.app.hide_weekends or date.weekday() < 5]
         end = visible_days[-1][0]
         self.week_label.set_label(
+            self.custom.title if self.headline_view else
             org.format_date(self.start, with_year=True) if self.day_view else
             f"{org.format_date(self.start, with_year=True)} – "
             f"{org.format_date(end, with_year=True)}")
@@ -367,10 +393,20 @@ class AgendaView(Adw.Bin):
         self.entry_buttons = []
         self.selected_item = None
         selected_button = None
-        items = iter(item for day in self.days.values() for item in day)
-        self.lines = org.format_agenda(
-            entries, self.start, 1 if self.day_view else 7, today,
-            with_todos=False, now=dt.datetime.now().time())
+        if self.headline_view:
+            self.days = {}
+            items = iter(HeadlineItem(entry) for entry in entries)
+            self.lines = [org.AgendaLine(
+                self.custom.title, "structure",
+                spans=[(0, len(self.custom.title), "agenda-structure")])]
+            self.lines.extend(org.agenda_item_line(entry) for entry in entries)
+            if not entries:
+                self.lines.append(org.AgendaLine("No matching headlines."))
+        else:
+            items = iter(item for day in self.days.values() for item in day)
+            self.lines = org.format_agenda(
+                entries, self.start, 1 if self.day_view else 7, today,
+                with_todos=False, now=dt.datetime.now().time())
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
                               css_classes=["monospace"],
@@ -551,18 +587,22 @@ class AgendaView(Adw.Bin):
         button.grab_focus()
 
     def shift(self, direction):
+        if self.headline_view:
+            return
         self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
         self._sync_calendar()
         self.refresh()
 
     def _sync_calendar(self):
+        if self.headline_view:
+            return
         if self.day_view:
             self.window.utility_pane.select_day(self.start)
         else:
             self.window.utility_pane.select_week(self.start)
 
     def show_day(self):
-        if self.day_view:
+        if self.day_view or self.headline_view:
             return
         date = self.window.utility_pane.calendar.get_date()
         self.start = (self.selected_item.date if self.selected_item else
@@ -572,7 +612,7 @@ class AgendaView(Adw.Bin):
         self.refresh(keep_scroll=False)
 
     def show_week(self):
-        if not self.day_view:
+        if not self.day_view or self.headline_view:
             return
         self.day_view = False
         self.start = org.week_start(self.start)
@@ -580,6 +620,8 @@ class AgendaView(Adw.Bin):
         self.refresh(keep_scroll=False)
 
     def goto_today(self):
+        if self.headline_view:
+            return
         start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
         if not self.weekly and self.start == start:
             return

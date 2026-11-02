@@ -564,6 +564,18 @@ def parse_entries(text, path=None):
     current = None
     in_drawer = in_block = False
     for i, line in enumerate(lines):
+        if in_block:
+            in_block = not BLOCK_END_RE.match(line)
+            continue
+        if in_drawer:
+            in_drawer = not DRAWER_END_RE.match(line)
+            continue
+        if BLOCK_START_RE.match(line):
+            in_block = True
+            continue
+        if DRAWER_START_RE.match(line) and not DRAWER_END_RE.match(line):
+            in_drawer = True
+            continue
         heading = parse_heading(line)
         if heading:
             level, keyword, priority, title, tags = heading
@@ -579,18 +591,6 @@ def parse_entries(text, path=None):
                 current.closed = planning.get("CLOSED")
             continue
         if current is None or (i == current.line + 1 and parse_planning(line) is not None):
-            continue
-        if in_block:
-            in_block = not BLOCK_END_RE.match(line)
-            continue
-        if in_drawer:
-            in_drawer = not DRAWER_END_RE.match(line)
-            continue
-        if BLOCK_START_RE.match(line):
-            in_block = True
-            continue
-        if DRAWER_START_RE.match(line) and not DRAWER_END_RE.match(line):
-            in_drawer = True
             continue
         timestamps = _active_timestamps(line)
         current.timestamps.extend(timestamps)

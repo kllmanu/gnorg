@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="io.github.kllmanu.Gnorg.Preferences">
+    <key name="custom-agenda-views" type="s">
+      <default>'[]'</default>
+      <summary>Custom agenda views</summary>
+      <description>JSON definitions for saved headline lists and dated agendas. Each has a unique one-character key, title, type and filters for own tags (all/any/excluded), TODO states, priorities, title, category and planning presence. Filter groups combine with AND; states and priorities combine with OR. Empty filters match all. C-c a opens the chooser, followed by a view key; a is reserved for the built-in Agenda. Views use files enabled in the utility pane, can be edited or deleted from its Agenda section, and do not modify Org files.</description>
+    </key>
     <key name="legacy-settings-migrated" type="b">
       <default>false</default>
       <summary>Organizer settings migration completed</summary>

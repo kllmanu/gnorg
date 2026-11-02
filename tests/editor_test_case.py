@@ -29,6 +29,8 @@ class EditorTestCase(unittest.TestCase):
         self.app.hidden_agenda_files = set()
         self.app.removed_files = set()
         self.app.file_colors = {}
+        self.app.custom_agendas = []
+        self.app._custom_agenda_load_error = None
         self.app.utility_file_order = []
         self.app._saved_utility_file_order = []
         self.app._last_selected_file = ""

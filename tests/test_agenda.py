@@ -232,6 +232,7 @@ class AgendaTests(EditorTestCase):
         self.assertTrue(tab.window._on_key_pressed(
             None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
         self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_a, 0, Gdk.ModifierType(0)))
+        tab.window.get_visible_dialog().activate("a")
         agenda = tab.window.weekly_agenda
         self.assertIs(tab.window.active_view, agenda)
         self.assertEqual(tab.window.get_title(), "Agenda – Gnorg")
