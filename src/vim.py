@@ -405,6 +405,60 @@ class EditorTab(Adw.Bin):
 
     # ---------- Org commands ----------
 
+    def move_or_relevel_heading(self, direction, move=False):
+        lines, heading = self._current_heading()
+        if heading is None:
+            return
+        cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        relative, column = cursor.get_line() - heading, cursor.get_line_offset()
+        if move:
+            result = org.move_heading(lines, heading, direction)
+            if result is None:
+                self.toast("No sibling heading in that direction")
+                return
+            edit, target = result
+        else:
+            edit = org.relevel_heading(lines, heading, direction)
+            if edit is None:
+                self.toast("Cannot promote a top-level heading")
+                return
+            target = heading
+            if org.parse_heading(lines[cursor.get_line()]):
+                column = max(0, column + direction)
+        fold_states = [(self.buffer.get_iter_at_mark(mark).get_line(), state)
+                       for mark, state in self.org_fold.states]
+        if move:
+            depth = org.parse_heading(lines[heading])[0]
+            subtree_end = next((index for index, level in org._structural_headings(lines)
+                                if index > heading and level <= depth), len(lines))
+            if subtree_end == len(lines) and lines[-1] == "":
+                subtree_end -= 1
+
+            def moved_line(line):
+                if heading <= line < subtree_end:
+                    return line + target - heading
+                if edit[0] <= line < edit[1]:
+                    return line + (subtree_end - heading) * (-1 if direction > 0 else 1)
+                return line
+
+            fold_states = [(moved_line(line), state) for line, state in fold_states]
+        self.apply_edit(edit)
+        self.org_fold._clear_states()
+        for line, state in fold_states:
+            mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
+            self.org_fold.states.append((mark, state))
+        self.org_fold.refresh()
+        iterator = self.buffer.get_iter_at_line(target + relative)[1]
+        if iterator.has_tag(self.org_fold.hidden):
+            self.org_fold.reveal(target + relative)
+            iterator = self.buffer.get_iter_at_line(target + relative)[1]
+        end = iterator.copy()
+        if not end.ends_line():
+            end.forward_to_line_end()
+        iterator.set_line_offset(min(column, end.get_line_offset()))
+        self.buffer.place_cursor(iterator)
+        self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, False, 0, 0)
+
     def _cancel_progress(self, *_):
         if self._progress_idle:
             GLib.source_remove(self._progress_idle)
@@ -1242,6 +1296,12 @@ class EditorWindow(Adw.ApplicationWindow):
                 return True
         modifiers = state & Gtk.accelerator_get_default_mod_mask()
         if modifiers == Gdk.ModifierType.ALT_MASK:
+            if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
+                    and keyval in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right)):
+                tab.move_or_relevel_heading(
+                    -1 if keyval in (Gdk.KEY_Up, Gdk.KEY_Left) else 1,
+                    move=keyval in (Gdk.KEY_Up, Gdk.KEY_Down))
+                return True
             if keyval in (Gdk.KEY_j, Gdk.KEY_k):
                 self.utility_pane.navigate_files(1 if keyval == Gdk.KEY_j else -1)
                 return True

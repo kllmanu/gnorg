@@ -614,6 +614,70 @@ def find_heading(lines, line_no):
     return None
 
 
+def _structural_headings(lines):
+    headings = []
+    in_block = in_drawer = False
+    for index, text in enumerate(lines):
+        if in_block:
+            in_block = not BLOCK_END_RE.match(text)
+        elif in_drawer:
+            in_drawer = not DRAWER_END_RE.match(text)
+        elif BLOCK_START_RE.match(text):
+            in_block = True
+        elif DRAWER_START_RE.match(text):
+            in_drawer = True
+        elif heading := parse_heading(text):
+            headings.append((index, heading[0]))
+    return headings
+
+
+def move_heading(lines, line, direction):
+    """Return (edit, new heading line) for moving a subtree among its siblings."""
+    original_end = len(lines)
+    trailing_newline = len(lines) > 1 and lines[-1] == ""
+    if trailing_newline:
+        lines = lines[:-1]
+    headings = _structural_headings(lines)
+    level = next((depth for index, depth in headings if index == line), None)
+    if level is None:
+        return None
+    end = next((index for index, depth in headings if index > line and depth <= level), len(lines))
+    if direction < 0:
+        previous = next(((index, depth) for index, depth in reversed(headings)
+                         if index < line and depth <= level), None)
+        if previous is None or previous[1] != level:
+            return None
+        start = previous[0]
+        updated = lines[line:end] + lines[start:line]
+        if trailing_newline and end == len(lines):
+            updated.append("")
+            end = original_end
+        return (start, end, updated), start
+    if not any(index == end and depth == level for index, depth in headings):
+        return None
+    next_end = next((index for index, depth in headings if index > end and depth <= level), len(lines))
+    target = line + next_end - end
+    updated = lines[end:next_end] + lines[line:end]
+    if trailing_newline and next_end == len(lines):
+        updated.append("")
+        next_end = original_end
+    return (line, next_end, updated), target
+
+
+def relevel_heading(lines, line, direction):
+    """Promote/demote a complete subtree, never promoting above level one."""
+    headings = _structural_headings(lines)
+    level = next((depth for index, depth in headings if index == line), None)
+    if level is None or level + direction < 1:
+        return None
+    end = next((index for index, depth in headings if index > line and depth <= level), len(lines))
+    updated = lines[line:end].copy()
+    for index, depth in headings:
+        if line <= index < end:
+            updated[index - line] = "*" * (depth + direction) + lines[index][depth:]
+    return line, end, updated
+
+
 def _planning_index(lines, heading_idx):
     i = heading_idx + 1
     if i < len(lines) and PLANNING_LINE_RE.match(lines[i]):
