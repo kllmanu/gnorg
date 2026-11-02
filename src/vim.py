@@ -84,6 +84,7 @@ class EditorTab(Adw.Bin):
         self._force_close = False
         self._zoom_toast = None
         self._active_date_popover = None
+        self._active_tag_popover = None
         self._file_monitor = None
         self._revert_timeout = 0
         self._revert_generation = 0
@@ -103,7 +104,7 @@ class EditorTab(Adw.Bin):
         self._setup_actions()
         self._org_key_sequences = OrgKeySequences(self, {
             "C-c C-t": self.cycle_todo,
-            "C-c C-c": self.toggle_checkbox,
+            "C-c C-c": self.confirm_org_item,
             "C-c C-s": lambda: self.edit_planning("SCHEDULED"),
             "C-c C-d": lambda: self.edit_planning("DEADLINE"),
             "C-c c": app.show_agenda,
@@ -384,6 +385,100 @@ class EditorTab(Adw.Bin):
 
     # ---------- Org commands ----------
 
+    def confirm_org_item(self):
+        text = self.get_text().split("\n")[self._cursor_line()]
+        if org.parse_heading(text) is not None:
+            self.edit_tags()
+        else:
+            self.toggle_checkbox()
+
+    def edit_tags(self):
+        if self._active_tag_popover is not None:
+            self._active_tag_popover.popdown()
+            return
+        line = self._cursor_line()
+        heading = self.get_text().split("\n")[line]
+        parsed = org.parse_heading(heading)
+        if parsed is None:
+            self.toast("Not on an Org heading")
+            return
+        mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
+        popover = Gtk.Popover(has_arrow=True, position=Gtk.PositionType.BOTTOM)
+        self._active_tag_popover = popover
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
+                      margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
+        box.append(Gtk.Label(label="Heading Tags", xalign=0, css_classes=["heading"]))
+        entry = Gtk.Entry(text=":".join(parsed[4]), placeholder_text="work:personal",
+                          width_chars=34)
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Heading tags"])
+        box.append(entry)
+        hint = Gtk.Label(label="Separate tags with colons or spaces. Leave empty to remove.",
+                         xalign=0, wrap=True, max_width_chars=40,
+                         css_classes=["caption", "dim-label"])
+        box.append(hint)
+        buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="_Cancel", use_underline=True)
+        cancel.connect("clicked", lambda *_: popover.popdown())
+        buttons.append(cancel)
+        apply = Gtk.Button(label="_Apply", use_underline=True,
+                           css_classes=["suggested-action"])
+        buttons.append(apply)
+        box.append(buttons)
+        popover.set_child(box)
+        popover.set_parent(self.editor_box)
+        popover.set_pointing_to(self._cursor_rect())
+
+        def validate(*_):
+            try:
+                org.parse_tags(entry.get_text())
+            except ValueError as error:
+                hint.set_label(str(error))
+                hint.set_css_classes(["caption", "error"])
+                apply.set_sensitive(False)
+            else:
+                hint.set_label("Separate tags with colons or spaces. Leave empty to remove.")
+                hint.set_css_classes(["caption", "dim-label"])
+                apply.set_sensitive(True)
+
+        def on_apply(*_):
+            if not apply.get_sensitive():
+                return
+            idx = self.buffer.get_iter_at_mark(mark).get_line()
+            current = self.get_text().split("\n")[idx]
+            if current != heading:
+                self.toast("The heading has changed. Open the tag editor again.")
+                popover.popdown()
+                return
+            updated = org.set_heading_tags(current, org.parse_tags(entry.get_text()))
+            if updated != current:
+                self.apply_edit((idx, idx + 1, [updated]))
+            popover.popdown()
+
+        def on_closed(p):
+            self.buffer.delete_mark(mark)
+            if self._active_tag_popover is p:
+                self._active_tag_popover = None
+            self.view.grab_focus()
+            GLib.idle_add(lambda: p.unparent() and False)
+
+        def on_key(_controller, keyval, _keycode, state):
+            if keyval == Gdk.KEY_Escape or (
+                    keyval == Gdk.KEY_g and state & Gdk.ModifierType.CONTROL_MASK):
+                popover.popdown()
+                return True
+            return False
+
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", on_key)
+        popover.add_controller(keys)
+        entry.connect("changed", validate)
+        entry.connect("activate", on_apply)
+        apply.connect("clicked", on_apply)
+        popover.connect("closed", on_closed)
+        popover.popup()
+        entry.grab_focus()
+        entry.select_region(0, -1)
+
     def toggle_checkbox(self):
         line = self._cursor_line()
         text = self.get_text().split("\n")[line]
@@ -536,6 +631,8 @@ class EditorTab(Adw.Bin):
         popover.popup()
 
     def _keyboard_quit(self):
+        if self._active_tag_popover is not None:
+            self._active_tag_popover.popdown()
         if self._active_date_popover is not None:
             self._active_date_popover.popdown()
 

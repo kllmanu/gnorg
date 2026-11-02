@@ -448,6 +448,23 @@ def parse_planning(line):
     return {kind: Timestamp.parse(raw) for kind, raw in PLANNING_ITEM_RE.findall(line)}
 
 
+def parse_tags(text):
+    """Parse colon- or whitespace-separated tags, preserving order without duplicates."""
+    tags = re.split(r"[:\s]+", text.strip())
+    if any(tag and not re.fullmatch(r"[\w@#%]+", tag) for tag in tags):
+        raise ValueError("Tags may contain letters, numbers, underscores, @, # and %.")
+    return list(dict.fromkeys(tag for tag in tags if tag))
+
+
+def set_heading_tags(line, tags):
+    """Replace only the heading's trailing tag field, preserving its other text."""
+    if parse_heading(line) is None:
+        raise ValueError("Not an Org heading")
+    if match := TAGS_RE.search(line.rstrip()):
+        line = line[:match.start()]
+    return line.rstrip() + (" " + ":" + ":".join(tags) + ":" if tags else "")
+
+
 def parse_entries(text, path=None):
     lines = text.split("\n")
     file_category = None

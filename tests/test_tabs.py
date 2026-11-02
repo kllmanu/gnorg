@@ -58,6 +58,62 @@ class TabTests(unittest.TestCase):
             self.assertIn("Gnorg is not org", about.call_args.kwargs["comments"])
             about.return_value.present.assert_called_once_with(self.app.get_active_window())
 
+    def open_heading_tags(self, tab):
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+        for _ in range(2):
+            tab._org_key_sequences._on_key_pressed(
+                None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK)
+        popover = tab._active_tag_popover
+        self.assertIsNotNone(popover)
+        return popover, popover.get_child().get_first_child().get_next_sibling()
+
+    def test_heading_tag_editor_applies_removes_and_undoes(self):
+        tab = self.app.new_tab()
+        original = "** TODO [#A] Report :work:\nBody\n"
+        tab.buffer.set_text(original)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        popover, entry = self.open_heading_tags(tab)
+        self.assertEqual(entry.get_text(), "work")
+        entry.set_text("home:project:home")
+        entry.emit("activate")
+        self.assertIsNone(tab._active_tag_popover)
+        self.assertEqual(tab.get_text(), "** TODO [#A] Report :home:project:\nBody\n")
+        tab.buffer.undo()
+        self.assertEqual(tab.get_text(), original)
+        popover, entry = self.open_heading_tags(tab)
+        entry.set_text("")
+        entry.emit("activate")
+        self.assertEqual(tab.get_text(), "** TODO [#A] Report\nBody\n")
+
+    def test_heading_tag_editor_validation_cancel_and_stale_heading(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Report :work:\n")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        original = tab.get_text()
+        popover, entry = self.open_heading_tags(tab)
+        entry.set_text("bad/tag")
+        entry.emit("activate")
+        self.assertEqual(tab.get_text(), original)
+        self.assertIs(tab._active_tag_popover, popover)
+        entry.set_text("home")
+        tab._keyboard_quit()
+        self.assertEqual(tab.get_text(), original)
+        popover, entry = self.open_heading_tags(tab)
+        tab.buffer.insert(tab.buffer.get_start_iter(), "changed")
+        with patch.object(tab, "toast") as toast:
+            entry.emit("activate")
+            toast.assert_called_once()
+        self.assertEqual(tab.get_text(), "changed" + original)
+
+    def test_confirm_org_item_still_toggles_checkboxes(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Report\n- [ ] Task\n")
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(1)[1])
+        tab.confirm_org_item()
+        self.assertEqual(tab.get_text(), "* Report\n- [X] Task\n")
+        self.assertIsNone(tab._active_tag_popover)
+
     def test_new_and_close_actions_target_selected_tab(self):
         first = self.app.new_tab()
         first.buffer.set_text("* First")

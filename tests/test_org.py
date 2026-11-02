@@ -254,6 +254,19 @@ class ParseTests(unittest.TestCase):
 
 
 class EditTests(unittest.TestCase):
+    def test_heading_tags_preserve_heading_and_normalize_input(self):
+        for heading, value, expected in (
+                ("** TODO [#A] Write report :old:", ":work:home:work:",
+                 "** TODO [#A] Write report :work:home:"),
+                ("* :old:", "new", "* :new:"),
+                ("* Title :old:", "", "* Title"),
+                ("* Title", "work home", "* Title :work:home:"),
+                ("* TODO", "_tag @home #project 100%", "* TODO :_tag:@home:#project:100%:")):
+            with self.subTest(heading=heading, value=value):
+                self.assertEqual(org.set_heading_tags(heading, org.parse_tags(value)), expected)
+        with self.assertRaises(ValueError):
+            org.parse_tags("invalid/tag")
+
     def test_cycle(self):
         lines = ["* Task", "body"]
         states = []
