@@ -26,6 +26,10 @@ def file_color(path):
     return FILE_COLORS[file_color_index(path)]
 
 
+def org_filename(name):
+    return name if name.endswith(".org") else name + ".org"
+
+
 def file_order_key(file, document):
     if file:
         path = file.get_path()
@@ -169,7 +173,7 @@ class UtilityPane(Adw.Bin):
             self.listbox.remove_all()
             self.rows = []
             for file, tab, source in items:
-                name = file.get_basename() if file else "Untitled"
+                name = file.get_basename().removesuffix(".org") if file else "Untitled"
                 if tab and tab.buffer.get_modified():
                     name = "• " + name
                 path = file.get_path() if file else None
@@ -279,7 +283,8 @@ class UtilityPane(Adw.Bin):
         popover.popup()
 
     def _rename_file(self, row):
-        entry = Gtk.Entry(text=row.file.get_basename(), activates_default=True)
+        entry = Gtk.Entry(text=row.file.get_basename().removesuffix(".org"),
+                          activates_default=True)
         dialog = Adw.AlertDialog(
             heading="Rename File", extra_child=entry,
             close_response="cancel", default_response="rename")
@@ -291,7 +296,7 @@ class UtilityPane(Adw.Bin):
             name = entry.get_text()
             dialog.set_response_enabled(
                 "rename", bool(name and name not in (".", "..") and "/" not in name
-                               and name != row.file.get_basename()))
+                               and org_filename(name) != row.file.get_basename()))
 
         entry.connect("changed", validate)
         validate()

@@ -149,6 +149,33 @@ class TabTests(unittest.TestCase):
             self.assertNotIn(tab, self.app.editor_tabs())
             self.assertTrue(self.app.file_removed(tab.file))
 
+    def test_new_file_save_appends_org_extension_and_list_hides_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                tab.buffer.set_text("* New")
+                tab.save_to(Gio.File.new_for_path(os.path.join(directory, "notes")))
+                self.wait_for(lambda: tab.file is not None)
+                self.assertEqual(tab.path, os.path.join(directory, "notes.org"))
+                self.assertFalse(os.path.exists(os.path.join(directory, "notes")))
+                pane = tab.window.utility_pane
+                pane.refresh()
+                row = next(row for row in pane.rows if row.document is tab)
+                self.assertEqual(row.get_title(), "notes")
+                self.assertEqual(row.get_tooltip_text(), tab.path)
+                tab.buffer.set_text("* Updated")
+                tab.save()
+                self.wait_for(lambda: not tab.buffer.get_modified())
+                self.assertFalse(os.path.exists(tab.path + ".org"))
+                other = tab.window.new_tab()
+                other.buffer.set_text("* Do not overwrite")
+                with patch.object(other, "toast") as toast:
+                    other.save_to(Gio.File.new_for_path(os.path.join(directory, "notes")))
+                    toast.assert_called_once()
+                self.assertIsNone(other.file)
+                with open(tab.path) as stream:
+                    self.assertEqual(stream.read(), "* Updated\n")
+
     def test_file_rename_preserves_unsaved_text_order_color_and_visibility(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "before.org")
@@ -164,7 +191,7 @@ class TabTests(unittest.TestCase):
                 old_key = tab.file.get_uri()
                 self.app.set_calendar_file_color(tab.file, "#123456")
                 self.app.set_agenda_file_visible(path, False)
-                self.app.rename_document(tab.file, "after.org", tab.window)
+                self.app.rename_document(tab.file, "after", tab.window)
                 self.wait_for(lambda: tab.path == renamed)
                 self.assertFalse(os.path.exists(path))
                 with open(renamed) as stream:
@@ -189,6 +216,7 @@ class TabTests(unittest.TestCase):
                 pane._rename_file(row)
                 dialog = tab.window.get_visible_dialog()
                 entry = dialog.get_extra_child()
+                self.assertEqual(entry.get_text(), "after")
                 self.assertFalse(dialog.get_response_enabled("rename"))
                 entry.set_text("../invalid.org")
                 self.assertFalse(dialog.get_response_enabled("rename"))
@@ -541,7 +569,7 @@ class TabTests(unittest.TestCase):
             pane.refresh()
             self.assertEqual(len(pane.rows), 1)
             self.assertIs(pane.rows[0].document, tab)
-            self.assertEqual(pane.rows[0].get_title(), "empty.org")
+            self.assertEqual(pane.rows[0].get_title(), "empty")
 
     def test_utility_visibility_toggle_preserves_keyboard_focus_and_does_not_open_file(self):
         with tempfile.TemporaryDirectory() as directory:

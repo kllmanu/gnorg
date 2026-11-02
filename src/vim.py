@@ -17,7 +17,7 @@ from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgFold, OrgIndent  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
-from utilitypane import UtilityPane, file_color, file_order_key  # noqa: E402
+from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
 APP_ID = "io.github.kllmanu.Organizer"
 APP_NAME = "GNORG"
@@ -657,6 +657,17 @@ class EditorTab(Adw.Bin):
         dialog.save(self.window, None, on_done)
 
     def save_to(self, file, then=None, on_cancel=None):
+        if self.file is None or not self.file.equal(file):
+            parent = file.get_parent()
+            if parent:
+                destination = parent.get_child(org_filename(file.get_basename()))
+                if not destination.equal(file) and destination.query_exists(None):
+                    self.toast(f"“{destination.get_basename()}” already exists. "
+                               "Choose that file explicitly to replace it.")
+                    if on_cancel:
+                        on_cancel()
+                    return
+                file = destination
         start, end = self.buffer.get_bounds()
         text = self.buffer.get_text(start, end, True)
         if text and not text.endswith("\n"):
@@ -1137,6 +1148,7 @@ class OrganizerApplication(Adw.Application):
         self.queue_agenda_refresh()
 
     def rename_document(self, file, name, window):
+        name = org_filename(name)
         old_key = file_order_key(file, None)
         documents = [tab for tab in self.editor_tabs()
                      if tab.file and file_order_key(tab.file, None) == old_key]

@@ -69,7 +69,7 @@
     <key name="file-colors" type="a{ss}">
       <default>{}</default>
       <summary>Custom file calendar colors</summary>
-      <description>Canonical file URIs mapped to RGB hex colors chosen with Change Color in the file context menu. Colors apply to utility pane dots and calendar events; deadlines retain their warning color. Rename preserves the file color, visibility, list position, and unsaved editor contents.</description>
+      <description>Canonical file URIs mapped to RGB hex colors chosen with Change Color in the file context menu. Colors apply to utility pane dots and calendar events; deadlines retain their warning color. Rename preserves the file color, visibility, list position, and unsaved editor contents. New and renamed files automatically use the .org extension, which is hidden in utility pane file names.</description>
     </key>
     <key name="hide-weekends" type="b">
       <default>true</default>
