@@ -748,8 +748,9 @@ def _agenda_time(ts):
     return label + "......"
 
 
-def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AGENDA_WIDTH):
-    """'  tasks:      10:00...... Scheduled:  TODO [#A] Title                 :tag:'"""
+def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AGENDA_WIDTH,
+                     timestamp_title=None):
+    """Format an agenda row, using standalone timestamp text when available."""
     spans = []
     text = "  " + f"{category(entry)[:CATEGORY_WIDTH - 1] + ':':<{CATEGORY_WIDTH}}"
     spans.append((2, len(text), "category"))
@@ -760,15 +761,15 @@ def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AG
         spans.append((len(text), len(text) + len(leader.rstrip()), leader_style))
         text += leader + " "
     title_start = len(text)
-    if entry.keyword:
+    if entry.keyword and timestamp_title is None:
         style = "done" if entry.is_done else "todo"
         spans.append((len(text), len(text) + len(entry.keyword), style))
         text += entry.keyword + " "
-    if entry.priority:
+    if entry.priority and timestamp_title is None:
         spans.append((len(text), len(text) + 4, "priority"))
         text += f"[#{entry.priority}] "
-    text += entry.display_title
-    if entry.is_done:
+    text += timestamp_title if timestamp_title is not None else entry.display_title
+    if entry.is_done and timestamp_title is None:
         spans.append((title_start, len(text), "agenda-done"))
     if entry.tags:
         tags = ":" + ":".join(entry.tags) + ":"
@@ -798,7 +799,8 @@ def format_agenda(entries, start, days, today, with_todos=True, width=AGENDA_WID
         day_lines = []
         for item in items:
             leader, style = _agenda_leader(item)
-            line = agenda_item_line(item.entry, leader, style, _agenda_time(item.ts), width)
+            line = agenda_item_line(item.entry, leader, style, _agenda_time(item.ts), width,
+                                    timestamp_title=item.timestamp_title)
             line.date = date
             minute = (item.ts.time.hour * 60 + item.ts.time.minute
                       if item.ts.time and item.kind != "deadline-upcoming" else 1440)

@@ -305,6 +305,27 @@ class EditTests(unittest.TestCase):
 
 
 class AgendaTests(unittest.TestCase):
+    def test_body_timestamps_use_their_own_text_in_agenda(self):
+        entries = org.parse_entries(
+            "* DONE [#A] Other stuff\n"
+            "<2026-11-02 Mon 08:00> Haare schneiden\n"
+            "<2026-11-02 Mon 15:00> [[https://example.com][Einkaufen]]\n"
+            "<2026-11-02 Mon 17:00>   \n", "/org/test.org")
+        date = D(2026, 11, 2)
+        items = org.build_agenda(entries, date, 1, date)[date]
+        self.assertEqual([item.timestamp_title for item in items],
+                         ["Haare schneiden", "Einkaufen", None])
+        lines = [line for line in org.format_agenda(
+            entries, date, 1, date, with_todos=False) if line.kind == "item"]
+        self.assertEqual([line.text.strip() for line in lines], [
+            "test:        8:00...... Haare schneiden",
+            "test:       15:00...... Einkaufen",
+            "test:       17:00...... DONE [#A] Other stuff",
+        ])
+        self.assertTrue(all(line.entry is entries[0] for line in lines))
+        self.assertFalse(any(style in ("done", "priority", "agenda-done")
+                             for line in lines[:2] for _, _, style in line.spans))
+
     def test_week(self):
         entries = org.parse_entries(DOC, "test.org")
         start = org.week_start(TODAY)  # Mon 26 Oct
