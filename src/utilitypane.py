@@ -426,7 +426,7 @@ class UtilityPane(Adw.Bin):
             else:
                 self.app.show_agenda(self.window)
                 view = self.window.agenda
-            view.start = org.week_start(selected)
+            view.start = selected if view.day_view else org.week_start(selected)
             view.refresh(keep_scroll=False)
         finally:
             self._syncing = False
@@ -434,16 +434,24 @@ class UtilityPane(Adw.Bin):
         if self.window.split_view.get_collapsed():
             self.window.split_view.set_show_sidebar(False)
 
+    def select_day(self, selected):
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self.calendar.set_date(GLib.DateTime.new_local(
+                selected.year, selected.month, selected.day, 0, 0, 0))
+        finally:
+            self._syncing = False
+        self.update_marks()
+
     def select_week(self, start):
         if self._syncing:
             return
         current = self.calendar.get_date()
         selected = dt.date(current.get_year(), current.get_month(), current.get_day_of_month())
         if org.week_start(selected) != start:
-            self._syncing = True
-            self.calendar.set_date(GLib.DateTime.new_local(
-                start.year, start.month, start.day, 0, 0, 0))
-            self._syncing = False
+            self.select_day(start)
         self.update_marks()
 
     def update_marks(self):

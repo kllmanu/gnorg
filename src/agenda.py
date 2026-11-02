@@ -1,4 +1,8 @@
-"""A workspace agenda view with a weekly calendar for dated Org entries."""
+"""Textual day/week Agenda and a weekly Calendar for dated Org entries.
+
+Agenda: d selects a day, w restores the week, f/b move by the current span,
+and . returns to today. Day selection follows the entry or mini-calendar.
+"""
 
 import datetime as dt
 import os
@@ -79,6 +83,7 @@ class AgendaView(Adw.Bin):
         self.name = "Agenda" if weekly else "Calendar"
         self.stack_name = "weekly-agenda" if weekly else "agenda"
         self.start = org.week_start(dt.date.today())
+        self.day_view = False
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
@@ -111,6 +116,8 @@ class AgendaView(Adw.Bin):
         following = Gtk.Button(icon_name="go-next-symbolic", tooltip_text="Next week",
                                css_classes=["flat"])
         following.connect("clicked", lambda *_: self.shift(1))
+        self.previous_button = previous
+        self.next_button = following
         self.today_button = Gtk.Button(tooltip_text="Go to the current week", css_classes=["flat"])
         today_content = Gtk.Box(spacing=6)
         today_content.append(Gtk.Image(icon_name="x-office-calendar-symbolic"))
@@ -232,7 +239,7 @@ class AgendaView(Adw.Bin):
 
     def present(self):
         self.window.stack.set_visible_child_name(self.stack_name)
-        self.window.utility_pane.select_week(self.start)
+        self._sync_calendar()
         self.window.present()
         self.view.grab_focus()
 
@@ -260,14 +267,20 @@ class AgendaView(Adw.Bin):
             f"background: alpha({color}, 0.28); }}"
             for color in colors))
         today = dt.date.today()
-        self.today_button.set_sensitive(self.start != org.week_start(today))
+        day_count = 1 if self.day_view else 7
+        self.previous_button.set_tooltip_text("Previous day" if self.day_view else "Previous week")
+        self.next_button.set_tooltip_text("Next day" if self.day_view else "Next week")
+        self.today_button.set_tooltip_text("Go to today" if self.day_view else "Go to the current week")
+        self.today_button.set_sensitive(
+            self.start != (today if self.day_view else org.week_start(today)))
         self.days = {
             date: [item for item in items if self.weekly or item.kind == "timestamp"]
-            for date, items in org.build_agenda(entries, self.start, 7, today).items()}
+            for date, items in org.build_agenda(entries, self.start, day_count, today).items()}
         visible_days = [(date, items) for date, items in self.days.items()
                         if self.weekly or not self.app.hide_weekends or date.weekday() < 5]
         end = visible_days[-1][0]
         self.week_label.set_label(
+            org.format_date(self.start, with_year=True) if self.day_view else
             f"{org.format_date(self.start, with_year=True)} – "
             f"{org.format_date(end, with_year=True)}")
         folder_message = None
@@ -356,7 +369,8 @@ class AgendaView(Adw.Bin):
         selected_button = None
         items = iter(item for day in self.days.values() for item in day)
         self.lines = org.format_agenda(
-            entries, self.start, 7, today, with_todos=False, now=dt.datetime.now().time())
+            entries, self.start, 1 if self.day_view else 7, today,
+            with_todos=False, now=dt.datetime.now().time())
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
                               css_classes=["monospace"],
@@ -519,6 +533,8 @@ class AgendaView(Adw.Bin):
             "Down": lambda: self._move(1), "Up": lambda: self._move(-1),
             "Return": self.open_entry, "space": self.open_entry,
         }
+        if self.weekly:
+            commands.update({"d": self.show_day, "w": self.show_week})
         command = commands.get(Gdk.keyval_name(keyval))
         if command is None:
             return False
@@ -535,16 +551,40 @@ class AgendaView(Adw.Bin):
         button.grab_focus()
 
     def shift(self, direction):
-        self.start += dt.timedelta(days=7 * direction)
-        self.window.utility_pane.select_week(self.start)
+        self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
+        self._sync_calendar()
         self.refresh()
 
+    def _sync_calendar(self):
+        if self.day_view:
+            self.window.utility_pane.select_day(self.start)
+        else:
+            self.window.utility_pane.select_week(self.start)
+
+    def show_day(self):
+        if self.day_view:
+            return
+        date = self.window.utility_pane.calendar.get_date()
+        self.start = (self.selected_item.date if self.selected_item else
+                      dt.date(date.get_year(), date.get_month(), date.get_day_of_month()))
+        self.day_view = True
+        self._sync_calendar()
+        self.refresh(keep_scroll=False)
+
+    def show_week(self):
+        if not self.day_view:
+            return
+        self.day_view = False
+        self.start = org.week_start(self.start)
+        self._sync_calendar()
+        self.refresh(keep_scroll=False)
+
     def goto_today(self):
-        start = org.week_start(dt.date.today())
+        start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
         if not self.weekly and self.start == start:
             return
         self.start = start
-        self.window.utility_pane.select_week(self.start)
+        self._sync_calendar()
         self.refresh()
 
     def _find_file(self):
