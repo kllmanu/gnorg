@@ -746,12 +746,12 @@ class EditorWindow(Adw.ApplicationWindow):
         self.tabs.set_vexpand(True)
         self.stack = Adw.ViewStack()
         self.stack.add_titled_with_icon(box, "files", "Files", "text-x-generic-symbolic")
-        self.agenda_container = Adw.Bin()
-        self.stack.add_titled_with_icon(
-            self.agenda_container, "agenda", "Calendar", "x-office-calendar-symbolic")
         self.weekly_agenda_container = Adw.Bin()
         self.stack.add_titled_with_icon(
             self.weekly_agenda_container, "weekly-agenda", "Agenda", "view-list-symbolic")
+        self.agenda_container = Adw.Bin()
+        self.stack.add_titled_with_icon(
+            self.agenda_container, "agenda", "Calendar", "x-office-calendar-symbolic")
         self.view_switcher = Adw.ViewSwitcherTitle(stack=self.stack, title=APP_NAME)
         self.switcher_bar = Adw.ViewSwitcherBar(stack=self.stack)
         self.view_switcher.bind_property(

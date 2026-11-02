@@ -735,7 +735,7 @@ class TabTests(unittest.TestCase):
         pages = window.stack.get_pages()
         self.assertEqual(pages.get_n_items(), 3)
         self.assertEqual([pages.get_item(i).get_title() for i in range(3)],
-                         ["Files", "Calendar", "Agenda"])
+                         ["Files", "Agenda", "Calendar"])
         self.assertTrue(all(pages.get_item(i).get_icon_name() for i in range(3)))
         tab.present()
         window.view_switcher.set_view_switcher_enabled(False)
