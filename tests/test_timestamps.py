@@ -1,12 +1,47 @@
 """Timestamps integration tests."""
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from editor_test_case import EditorTestCase
-from vim import Gdk
+from vim import Gdk, Gtk
 
 
 class TimestampEditorTests(EditorTestCase):
+    def test_clicking_timestamps_edits_exact_date_and_preserves_inactive_state(self):
+        for text, needle, expected in (
+                ("* Event <2026-11-02 Mon>\n", "<2026", "* Event <2026-11-06 Fri>\n"),
+                ("* Event\n[2026-11-02 Mon]\n", "[2026", "* Event\n[2026-11-06 Fri]\n"),
+                ("* Event\nSCHEDULED: <2026-11-02 Mon> DEADLINE: <2026-11-03 Tue>\n",
+                 "<2026-11-03", "* Event\nSCHEDULED: <2026-11-02 Mon> DEADLINE: <2026-11-06 Fri>\n"),
+                ("* Event\n<2026-11-02 Mon>--<2026-11-03 Tue>\n",
+                 "<2026-11-03", "* Event\n<2026-11-02 Mon>--<2026-11-06 Fri>\n")):
+            with self.subTest(text=text):
+                tab = self.app.new_tab()
+                tab.buffer.set_text(text)
+                tab.present()
+                self.wait_for(tab.view.get_mapped)
+                offset = text.index(needle)
+
+                def point():
+                    rect = tab.view.get_iter_location(tab.buffer.get_iter_at_offset(offset))
+                    return tab.view.buffer_to_window_coords(
+                        Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+
+                interaction = tab.org_todo_interaction
+                self.wait_for(lambda: interaction._target_at(*point()) == (offset, "timestamp"))
+                interaction._motion(None, *point())
+                self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
+                gesture = Mock()
+                interaction._pressed(gesture, 1, *point())
+                gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+                popover = tab._active_date_popover
+                self.assertIsNotNone(popover)
+                popover.entry.set_text("2026-11-06")
+                popover._apply()
+                self.assertEqual(tab.get_text(), expected)
+                tab.buffer.undo()
+                self.assertEqual(tab.get_text(), text)
+
     def test_timestamp_shortcut_inserts_active_timestamp_and_undoes_once(self):
         import org
 

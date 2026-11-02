@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import datetime as dt
+from dataclasses import replace
 import os
 import sys
 import time
@@ -125,7 +126,7 @@ class EditorTab(Adw.Bin):
         self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
         self.org_todo_interaction = OrgTodoInteraction(
             self.view, self._cycle_todo_at_line, self._toggle_checkbox_at_line,
-            self.org_fold.toggle)
+            self.org_fold.toggle, self._edit_timestamp_at_offset)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() in (
                 GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
@@ -557,6 +558,21 @@ class EditorTab(Adw.Bin):
         self.apply_edit(edit)
         return True, message
 
+    def _edit_timestamp_at_offset(self, offset):
+        iterator = self.buffer.get_iter_at_offset(offset)
+        self.buffer.place_cursor(iterator)
+        line = iterator.get_line()
+        lines = self.get_text().split("\n")
+        heading = org.find_heading(lines, line)
+        if heading is not None and line == heading + 1 and org.parse_planning(lines[line]):
+            column = iterator.get_line_offset()
+            for match in org.PLANNING_ITEM_RE.finditer(lines[line]):
+                if (match[1] in ("SCHEDULED", "DEADLINE")
+                        and match.start(2) <= column < match.end(2)):
+                    self.edit_planning(match[1])
+                    return
+        self.insert_timestamp()
+
     def insert_timestamp(self):
         if self._active_date_popover is not None:
             self._active_date_popover.popdown()
@@ -565,7 +581,7 @@ class EditorTab(Adw.Bin):
         cursor = buf.get_iter_at_mark(buf.get_insert())
         start = end = cursor.get_offset()
         initial = None
-        for match in org.ACTIVE_TS_RE.finditer(self.get_text()):
+        for match in org.SINGLE_TS_RE.finditer(self.get_text()):
             if match.start() <= start < match.end():
                 initial = org.Timestamp.parse(match.group(0))
                 if initial is not None:
@@ -587,6 +603,8 @@ class EditorTab(Adw.Bin):
                 return
             buf.begin_user_action()
             buf.delete(first, last)
+            if initial is not None:
+                timestamp = replace(timestamp, active=initial.active)
             buf.insert(buf.get_iter_at_mark(start_mark), timestamp.format())
             buf.place_cursor(buf.get_iter_at_mark(end_mark))
             buf.end_user_action()

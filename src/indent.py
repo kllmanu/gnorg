@@ -406,13 +406,14 @@ class OrgFold:
 
 
 class OrgTodoInteraction:
-    """Handle heading, task keyword, and checkbox pointer interactions."""
+    """Handle heading, task keyword, checkbox, and timestamp pointer interactions."""
 
-    def __init__(self, view, cycle, toggle_checkbox, toggle_heading):
+    def __init__(self, view, cycle, toggle_checkbox, toggle_heading, edit_timestamp):
         self.view = view
         self.cycle = cycle
         self.toggle_checkbox = toggle_checkbox
         self.toggle_heading = toggle_heading
+        self.edit_timestamp = edit_timestamp
         self._hovering = False
         motion = Gtk.EventControllerMotion(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         motion.connect("enter", self._motion)
@@ -439,6 +440,10 @@ class OrgTodoInteraction:
         if not end.ends_line():
             end.forward_to_line_end()
         text = buffer.get_text(start, end, True)
+        for timestamp in org.SINGLE_TS_RE.finditer(text):
+            if org.Timestamp.parse(timestamp[0]) is not None and self._span_contains(
+                    start.get_line(), timestamp.start(), timestamp[0], bx, by):
+                return start.get_offset() + timestamp.start(), "timestamp"
         match = org.HEADING_KEYWORD_RE.match(text)
         if match is not None:
             if match[2] is not None and self._span_contains(
@@ -493,7 +498,9 @@ class OrgTodoInteraction:
         if target is not None:
             line, kind = target
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-            if kind == "checkbox":
+            if kind == "timestamp":
+                self.edit_timestamp(line)
+            elif kind == "checkbox":
                 self.toggle_checkbox(line)
             elif kind == "heading":
                 self.toggle_heading(line)

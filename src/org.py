@@ -27,6 +27,7 @@ PLANNING_ITEM_RE = re.compile(r"(SCHEDULED|DEADLINE|CLOSED):[ \t]*(<[^>\n]*>|\[[
 PLANNING_LINE_RE = re.compile(
     r"^([ \t]*)(?:(?:SCHEDULED|DEADLINE|CLOSED):[ \t]*(?:<[^>\n]*>|\[[^\]\n]*\])[ \t]*)+$")
 ACTIVE_TS_RE = re.compile(r"<(\d{4}-\d{2}-\d{2}[^>\n]*)>")
+SINGLE_TS_RE = re.compile(r"<\d{4}-\d{2}-\d{2}[^>\n]*>|\[\d{4}-\d{2}-\d{2}[^\]\n]*\]")
 ANY_TS_RE = re.compile(r"<\d{4}-\d{2}-\d{2}[^>\n]*>(?:--<[^>\n]*>)?|\[\d{4}-\d{2}-\d{2}[^\]\n]*\]")
 LINK_RE = re.compile(r"\[\[([^\]\n]+)\](?:\[([^\]\n]+)\])?\]")
 DRAWER_START_RE = re.compile(r"^[ \t]*:[\w-]+:[ \t]*$")
