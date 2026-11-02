@@ -1030,10 +1030,12 @@ class OrganizerApplication(Adw.Application):
             selected = self.settings.get_string("session-active-file")
             for uri in self.settings.get_strv("session-files"):
                 file = Gio.File.new_for_uri(uri)
-                if not self.file_removed(file):
+                if not self.file_removed(file) and file.query_exists(None):
                     self.open_file(file)
-            if selected and not self.file_removed(Gio.File.new_for_uri(selected)):
-                self.open_file(Gio.File.new_for_uri(selected))
+            if selected:
+                file = Gio.File.new_for_uri(selected)
+                if not self.file_removed(file) and file.query_exists(None):
+                    self.open_file(file)
 
     def save_session(self):
         if self.settings:

@@ -1915,6 +1915,48 @@ class TabTests(unittest.TestCase):
             tab.window.get_visible_dialog().emit("response", "cancel")
             settings.set_strv.assert_not_called()
 
+    def test_session_restore_skips_missing_files_including_selected_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "existing.org")
+            with open(path, "w") as stream:
+                stream.write("* Existing")
+            existing = Gio.File.new_for_path(path)
+            missing = Gio.File.new_for_path(os.path.join(directory, "missing.org"))
+            settings = Mock()
+            settings.get_strv.return_value = [missing.get_uri(), existing.get_uri()]
+            settings.get_string.side_effect = lambda key: (
+                missing.get_uri() if key == "session-active-file" else directory)
+            settings.get_int.side_effect = lambda key: {
+                "window-width": 960, "window-height": 680}[key]
+            settings.get_boolean.return_value = False
+            with patch.object(self.app, "settings", settings):
+                self.app._session_restored = False
+                self.app.do_activate()
+                self.assertEqual(len(self.app.editor_tabs()), 1)
+                tab = self.app.editor_tabs()[0]
+                self.assertTrue(tab.file.equal(existing))
+                self.wait_for(lambda: tab.get_text() == "* Existing")
+                self.assertIsNone(self.app.window_for_path(missing.get_path()))
+
+    def test_session_restore_with_only_missing_files_leaves_pristine_editor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Gio.File.new_for_path(os.path.join(directory, "missing.org"))
+            settings = Mock()
+            settings.get_strv.return_value = [missing.get_uri()]
+            settings.get_string.side_effect = lambda key: (
+                missing.get_uri() if key == "session-active-file" else directory)
+            settings.get_int.side_effect = lambda key: {
+                "window-width": 960, "window-height": 680}[key]
+            settings.get_boolean.return_value = False
+            with patch.object(self.app, "settings", settings):
+                self.app._session_restored = False
+                self.app.do_activate()
+                self.assertEqual(len(self.app.editor_tabs()), 1)
+                tab = self.app.editor_tabs()[0]
+                self.assertTrue(tab.is_pristine)
+                self.assertIsNone(tab.file)
+                self.assertEqual(tab.window.utility_pane.rows, [])
+
     def test_startup_reselects_last_file_after_empty_document_and_quit_checks(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Gio.SettingsSchemaSource.new_from_directory(
