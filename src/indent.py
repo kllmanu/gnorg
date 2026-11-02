@@ -260,6 +260,8 @@ class OrgFold:
         child_level = min((depth for _, depth in children), default=level + 1)
         child_lines = {i for i, depth in children if depth == child_level}
         visible = child_lines or set(range(line + 1, end))
+        if lines[-1] == "":
+            visible.discard(len(lines) - 1)
         folded = bool(visible) and all(
             self.buffer.get_iter_at_line(i)[1].has_tag(self.hidden) for i in visible)
         for entry in list(self.states):

@@ -7,6 +7,29 @@ from vim import GLib, Gtk
 
 
 class EditorTests(EditorTestCase):
+    def test_clicking_last_heading_toggles_body_at_end_of_file(self):
+        for suffix in ("", "\n"):
+            with self.subTest(suffix=suffix):
+                tab = self.app.new_tab()
+                text = "* First\nBody\n* Last\nLast body" + suffix
+                tab.buffer.set_text(text)
+                tab.present()
+                self.wait_for(tab.view.get_mapped)
+                interaction = tab.org_todo_interaction
+
+                def point():
+                    rect = tab.view.get_iter_location(
+                        tab.buffer.get_iter_at_line_offset(2, 3)[1])
+                    return tab.view.buffer_to_window_coords(
+                        Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+
+                self.wait_for(lambda: interaction._target_at(*point()) == (2, "heading"))
+                for hidden in (True, False, True, False):
+                    interaction._pressed(Mock(), 1, *point())
+                    self.assertEqual(tab.buffer.get_iter_at_line(3)[1].has_tag(
+                        tab.org_fold.hidden), hidden)
+                self.assertEqual(tab.get_text(), text)
+
     def test_clicking_heading_title_toggles_immediate_children_without_cycling(self):
         tab = self.app.new_tab()
         text = "* TODO Parent :work:\nBody\n** Child\nDetails\n* Next\nTail\n"
