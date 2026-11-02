@@ -362,9 +362,23 @@ class AgendaView(Adw.Bin):
                               css_classes=["monospace"],
                               margin_top=1, margin_bottom=1)
             label.set_attributes(self._line_attributes(line))
+            content = label
+            tag_span = next((span for span in line.spans if span[2] == "tag"), None)
+            if tag_span is not None:
+                start, end, _style = tag_span
+                label.set_label(line.text[:start].rstrip())
+                label.set_hexpand(True)
+                tags = Gtk.Label(label=line.text[start:end], xalign=1,
+                                 css_classes=["monospace"], margin_end=2)
+                tag_line = org.AgendaLine(
+                    line.text[start:end], spans=[(0, end - start, "tag")])
+                tags.set_attributes(self._line_attributes(tag_line))
+                content = Gtk.Box(spacing=16)
+                content.append(label)
+                content.append(tags)
             if line.kind == "item":
                 item = next(items)
-                button = Gtk.Button(child=label, css_classes=["flat"])
+                button = Gtk.Button(child=content, css_classes=["flat"])
                 button.connect("clicked", lambda _button, event=item: self._open_item(event))
                 button.connect("notify::has-focus", lambda widget, *_args, event=item:
                                self._select(event) if widget.has_focus() else None)

@@ -11,6 +11,37 @@ from vim import Adw
 
 
 class AgendaTests(EditorTestCase):
+    def test_agenda_tags_align_to_right_after_window_resize(self):
+        import datetime as dt
+        import org
+
+        tab = self.app.new_tab()
+        self.app.show_weekly_agenda(tab.window)
+        agenda = tab.window.weekly_agenda
+        entries = org.parse_entries(
+            f"* TODO Event :work:home:\n<{dt.date.today().isoformat()}>\n", "/org/test.org")
+        with patch.object(self.app, "agenda_entries", return_value=("/org", ["test.org"], entries)):
+            agenda.refresh()
+            tab.window.present()
+            button = agenda.entry_buttons[0][1]
+            content = button.get_child()
+            tags = content.get_last_child()
+            self.assertEqual(tags.get_label(), ":work:home:")
+
+            def aligned():
+                content = agenda.entry_buttons[0][1].get_child()
+                tags = content.get_last_child()
+                ok, bounds = tags.compute_bounds(content)
+                return (ok and content.get_width() > 100
+                        and abs(bounds.get_x() + bounds.get_width()
+                                - content.get_width() + tags.get_margin_end()) <= 2)
+
+            self.wait_for(aligned)
+            width = tab.window.get_width()
+            tab.window.set_default_size(width + 180, tab.window.get_height())
+            self.wait_for(lambda: tab.window.get_width() != width)
+            self.wait_for(aligned)
+
     def test_agenda_displays_file_category_and_unsaved_category_changes(self):
         import datetime as dt
 
