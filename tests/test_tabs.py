@@ -1046,6 +1046,9 @@ class TabTests(unittest.TestCase):
                 colors = {}
                 for item, button in agenda.entry_buttons:
                     label = button.get_child()
+                    self.assertEqual(
+                        label.get_pango_context().get_font_description().get_weight(),
+                        Pango.Weight.NORMAL)
                     self.assertLessEqual(label.get_margin_top() + label.get_margin_bottom(), 2)
                     attributes = label.get_attributes()
                     iterator = attributes.get_iterator()

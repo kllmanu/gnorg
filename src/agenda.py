@@ -164,7 +164,7 @@ class AgendaView(Adw.Bin):
                 border-left-color: @error_color; }
             .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
             .organizer-agenda > row { padding: 0; }
-            .organizer-agenda button { padding: 0; min-height: 0; }
+            .organizer-agenda button { padding: 0; min-height: 0; font-weight: normal; }
             .organizer-agenda button.agenda-cursor {
                 background: alpha(@accent_bg_color, 0.18);
                 box-shadow: inset 3px 0 @accent_bg_color; }
