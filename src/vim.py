@@ -2,6 +2,7 @@
 import datetime as dt
 import os
 import sys
+import time
 
 import gi
 
@@ -89,7 +90,12 @@ class EditorTab(Adw.Bin):
         self._disk_contents = None
         self._saving = 0
         self._external_change_warned = False
+        self._escape_timeout = 0
+        self._escape_started = 0
+        self._escape_mark = None
+        self._escape_prefix = ""
         self.connect("destroy", lambda *_: self.stop_auto_revert())
+        self.connect("destroy", lambda *_: self._flush_escape_prefix())
 
         self._build_editor()
         self._build_ui()
@@ -216,8 +222,54 @@ class EditorTab(Adw.Bin):
         self.vim_controller.set_im_context(self.vim)
         self.view.add_controller(self.vim_controller)
         self.vim_enabled = True
+        focus = Gtk.EventControllerFocus()
+        focus.connect("leave", lambda *_: self._flush_escape_prefix())
+        self.view.add_controller(focus)
+
+    def _flush_escape_prefix(self):
+        if self._escape_timeout:
+            GLib.source_remove(self._escape_timeout)
+            self._escape_timeout = 0
+        if self._escape_mark:
+            mark = self._escape_mark
+            self._escape_mark = None
+            iterator = self.buffer.get_iter_at_mark(mark)
+            self.buffer.insert(iterator, self._escape_prefix)
+            self._escape_prefix = ""
+            self.buffer.delete_mark(mark)
+        return GLib.SOURCE_REMOVE
+
+    def _on_escape_sequence(self, keyval, state):
+        app = self.get_application()
+        insert_mode = self.vim.get_command_bar_text() == GLib.dgettext(
+            "gtksourceview-5", "-- INSERT --")
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        codepoint = Gdk.keyval_to_unicode(keyval)
+        character = chr(codepoint) if codepoint else ""
+        eligible = (app.jj_escape and self.vim_enabled and insert_mode
+                    and not modifiers & ~Gdk.ModifierType.SHIFT_MASK)
+        if self._escape_mark:
+            if (eligible and character == app.escape_sequence[1]
+                    and time.monotonic() - self._escape_started <= app.jj_escape_delay / 1000):
+                GLib.source_remove(self._escape_timeout)
+                self._escape_timeout = 0
+                self.buffer.delete_mark(self._escape_mark)
+                self._escape_mark = None
+                self._escape_prefix = ""
+                self.vim.reset()
+                return True
+            self._flush_escape_prefix()
+        if not eligible or character != app.escape_sequence[0]:
+            return False
+        self._escape_prefix = character
+        self._escape_started = time.monotonic()
+        self._escape_mark = self.buffer.create_mark(
+            None, self.buffer.get_iter_at_mark(self.buffer.get_insert()), True)
+        self._escape_timeout = GLib.timeout_add(app.jj_escape_delay, self._flush_escape_prefix)
+        return True
 
     def _set_vim_enabled(self, enabled):
+        self._flush_escape_prefix()
         if enabled == self.vim_enabled:
             return
         self.vim_enabled = enabled
@@ -616,6 +668,7 @@ class EditorTab(Adw.Bin):
         file.load_contents_async(None, on_loaded)
 
     def _set_file(self, file, text, raw=None):
+        self._flush_escape_prefix()
         self.file = file
         self.get_application().remember_file(file)
         self.buffer.begin_irreversible_action()
@@ -685,6 +738,7 @@ class EditorTab(Adw.Bin):
                 return
             if contents == self._disk_contents:
                 return
+            self._flush_escape_prefix()
             if self.buffer.get_modified():
                 if not self._external_change_warned:
                     self.toast("File changed on disk. Your unsaved edits have been kept.")
@@ -749,6 +803,7 @@ class EditorTab(Adw.Bin):
         dialog.save(self.window, None, on_done)
 
     def save_to(self, file, then=None, on_cancel=None):
+        self._flush_escape_prefix()
         if self.file is None or not self.file.equal(file):
             parent = file.get_parent()
             if parent:
@@ -803,6 +858,7 @@ class EditorTab(Adw.Bin):
         self.close()
 
     def request_close(self, finish):
+        self._flush_escape_prefix()
         if self._force_close or not self.buffer.get_modified():
             finish(True)
             return
@@ -893,6 +949,10 @@ class EditorWindow(Adw.ApplicationWindow):
         header.sidebar_toggle = button
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
+        tab = self.active_view
+        if isinstance(tab, EditorTab) and self.get_focus() is tab.view:
+            if tab._on_escape_sequence(keyval, state):
+                return True
         modifiers = state & Gtk.accelerator_get_default_mod_mask()
         if modifiers == Gdk.ModifierType.ALT_MASK:
             if keyval in (Gdk.KEY_j, Gdk.KEY_k):
@@ -1038,6 +1098,9 @@ class OrganizerApplication(Adw.Application):
         self.org_indent_enabled = True
         self.show_line_numbers = False
         self.auto_revert = True
+        self.jj_escape = True
+        self.jj_escape_delay = 200
+        self.escape_sequence = "jj"
         self.hide_weekends = True
         self._quitting = False
         self._session_restored = False
@@ -1066,6 +1129,14 @@ class OrganizerApplication(Adw.Application):
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
             self.auto_revert = self.settings.get_boolean("auto-revert")
+            self.jj_escape = self.settings.get_boolean("jj-escape")
+            self.jj_escape_delay = self.settings.get_int("jj-escape-delay")
+            sequence = self.settings.get_string("escape-sequence")
+            if len(sequence) == 2 and all(char.isprintable() and not char.isspace()
+                                          for char in sequence):
+                self.escape_sequence = sequence
+            else:
+                print(f"{APP_NAME}: invalid escape sequence; using jj", file=sys.stderr)
             self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
             self.hidden_agenda_files = set(self.settings.get_strv("hidden-agenda-files"))
@@ -1465,6 +1536,43 @@ class OrganizerApplication(Adw.Application):
         auto_revert_row.connect(
             "notify::active", lambda row, *_: self.set_auto_revert(row.get_active()))
         editor_group.add(auto_revert_row)
+        escape_row = Adw.SwitchRow(
+            title="Key Sequence to Escape",
+            subtitle="Type the escape sequence quickly to leave Vim insert mode.",
+            active=self.jj_escape)
+        escape_row.connect(
+            "notify::active", lambda row, *_: self.set_jj_escape(row.get_active()))
+        editor_group.add(escape_row)
+        sequence_row = Adw.EntryRow(
+            title="Escape Sequence", text=self.escape_sequence, show_apply_button=True,
+            sensitive=self.jj_escape)
+        sequence_row.set_tooltip_text("Exactly two visible characters, for example jj or jk.")
+
+        def apply_sequence(row):
+            sequence = row.get_text()
+            if len(sequence) != 2 or not all(
+                    char.isprintable() and not char.isspace() for char in sequence):
+                row.add_css_class("error")
+                row.set_tooltip_text("Enter exactly two visible characters without spaces.")
+                return
+            row.remove_css_class("error")
+            row.set_tooltip_text("Exactly two visible characters, for example jj or jk.")
+            self.set_escape_sequence(sequence)
+
+        sequence_row.connect("apply", apply_sequence)
+        escape_row.bind_property(
+            "active", sequence_row, "sensitive", GObject.BindingFlags.SYNC_CREATE)
+        editor_group.add(sequence_row)
+        delay_row = Adw.SpinRow(
+            title="Escape Sequence Delay",
+            subtitle="Maximum interval between the two keys, in milliseconds.",
+            adjustment=Gtk.Adjustment(
+                value=self.jj_escape_delay, lower=50, upper=1000, step_increment=10,
+                page_increment=50), digits=0, sensitive=self.jj_escape)
+        delay_row.connect(
+            "notify::value", lambda row, *_: self.set_jj_escape_delay(int(row.get_value())))
+        escape_row.bind_property("active", delay_row, "sensitive", GObject.BindingFlags.SYNC_CREATE)
+        editor_group.add(delay_row)
         page.add(editor_group)
         group = Adw.PreferencesGroup(
             title="Calendar",
@@ -1534,6 +1642,27 @@ class OrganizerApplication(Adw.Application):
             self.settings.set_boolean("auto-revert", enabled)
         for tab in self.editor_tabs():
             tab.setup_auto_revert(check=enabled)
+
+    def set_jj_escape(self, enabled):
+        for tab in self.editor_tabs():
+            tab._flush_escape_prefix()
+        self.jj_escape = enabled
+        if self.settings:
+            self.settings.set_boolean("jj-escape", enabled)
+
+    def set_jj_escape_delay(self, delay):
+        for tab in self.editor_tabs():
+            tab._flush_escape_prefix()
+        self.jj_escape_delay = delay
+        if self.settings:
+            self.settings.set_int("jj-escape-delay", delay)
+
+    def set_escape_sequence(self, sequence):
+        for tab in self.editor_tabs():
+            tab._flush_escape_prefix()
+        self.escape_sequence = sequence
+        if self.settings:
+            self.settings.set_string("escape-sequence", sequence)
 
     def set_hide_weekends(self, enabled):
         self.hide_weekends = enabled

@@ -45,6 +45,21 @@
       <summary>Automatically reload files changed on disk</summary>
       <description>Monitor open documents and reload externally changed files when there are no unsaved edits. Unsaved edits are preserved with a warning instead of being overwritten. Reloads keep the cursor position where possible and update Calendar and Agenda. Enabling this setting also checks already open files.</description>
     </key>
+    <key name="jj-escape" type="b">
+      <default>true</default>
+      <summary>Use a key sequence to escape Vim insert mode</summary>
+      <description>The configured two-character sequence typed within the escape delay leaves insert mode without inserting text. An unmatched first character is inserted after the delay or before another key. Normal, visual, replace, and non-Vim editing are unchanged.</description>
+    </key>
+    <key name="escape-sequence" type="s">
+      <default>'jj'</default>
+      <summary>Insert mode escape sequence</summary>
+      <description>Exactly two visible characters without spaces, such as jj or jk. Case-sensitive; Shift is supported. Apply changes in Preferences to activate the sequence.</description>
+    </key>
+    <key name="jj-escape-delay" type="i">
+      <range min="50" max="1000"/>
+      <default>200</default>
+      <summary>jj escape delay in milliseconds</summary>
+    </key>
     <key name="zoom" type="i">
       <range min="30" max="400"/>
       <default>100</default>
