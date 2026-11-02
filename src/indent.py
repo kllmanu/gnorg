@@ -85,12 +85,14 @@ class OrgFold:
         if self._visual_cursor and not self._visual_cursor.get_deleted():
             return
         cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
-        # GtkSource's linewise visual mode moves a separate cursor mark, not "insert".
+        # GtkSource visual modes move a private right-gravity mark, not "insert".
         self._visual_cursor = next(
-            (mark for mark in cursor.get_marks()
-             if mark.get_name() is None and mark.get_visible()), None)
+            (mark for iterator in (cursor, *self.buffer.get_selection_bounds())
+             for mark in iterator.get_marks()
+             if mark.get_name() is None and not mark.get_left_gravity()), None)
         if self._visual_cursor:
-            self._visual_cursor_offset = cursor.get_offset()
+            self._visual_cursor_offset = self.buffer.get_iter_at_mark(
+                self._visual_cursor).get_offset()
 
     def _skip_hidden_visual_cursor(self, _buffer, iterator, mark):
         if self._moving_cursor or mark is not self._visual_cursor:

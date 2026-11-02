@@ -339,6 +339,8 @@ class TabTests(unittest.TestCase):
         dialog.close()
 
     def test_visual_line_selection_skips_folded_bodies_in_both_directions(self):
+        self.addCleanup(self.app.set_show_line_numbers, False)
+        self.app.set_show_line_numbers(True)
         tab = self.app.new_tab()
         text = "* First\nBody one\nBody two\n* Second\nBody three\n* Third\n"
         tab.buffer.set_text(text)
@@ -372,6 +374,32 @@ class TabTests(unittest.TestCase):
         self.assertTrue(tab.buffer.get_modified())
         tab.buffer.undo()
         self.assertEqual(tab.get_text(), text)
+
+    def test_character_visual_selection_skips_folded_bodies_with_line_numbers(self):
+        self.addCleanup(self.app.set_show_line_numbers, False)
+        self.app.set_show_line_numbers(True)
+        tab = self.app.new_tab()
+        text = "* First\nBody one\nBody two\n* Second\nBody three\n* Third\n"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.org_fold.cycle(global_cycle=True)
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+        display = Gdk.Display.get_default()
+        for keyval, expected in ((Gdk.KEY_v, 0), (Gdk.KEY_j, 3), (Gdk.KEY_j, 5),
+                                  (Gdk.KEY_k, 3), (Gdk.KEY_k, 0)):
+            key = display.map_keyval(keyval)[1][0]
+            tab.vim.filter_key(True, tab.window.get_surface(),
+                               display.get_default_seat().get_keyboard(), 0, key.keycode,
+                               Gdk.ModifierType(0), key.group)
+            self.assertIsNotNone(tab.org_fold._visual_cursor)
+            cursor = tab.buffer.get_iter_at_mark(tab.org_fold._visual_cursor)
+            self.assertEqual(cursor.get_line(), expected)
+            self.assertFalse(cursor.has_tag(tab.org_fold.hidden))
+            self.assertTrue(tab.buffer.get_has_selection())
+        self.assertEqual(tab.get_text(), text)
+        self.assertFalse(tab.buffer.get_modified())
 
     def test_jj_escape_is_inactive_in_visual_mode(self):
         tab = self.app.new_tab()

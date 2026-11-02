@@ -124,8 +124,9 @@ class EditorTab(Adw.Bin):
         self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
-            self.vim.get_command_bar_text() == GLib.dgettext(
-                "gtksourceview-5", "-- VISUAL LINE --")))
+            self.vim.get_command_bar_text() in (
+                GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
+                GLib.dgettext("gtksourceview-5", "-- VISUAL --"))))
 
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())
