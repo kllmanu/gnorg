@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Start GNORG (Gnorg is not org)."""
+"""Start Gnorg (Gnorg is not org)."""
 
 import sys
 
-from vim import OrganizerApplication
+from vim import GnorgApplication
 
 
 def main():
-    return OrganizerApplication().run(sys.argv)
+    return GnorgApplication().run(sys.argv)
 
 
 if __name__ == "__main__":

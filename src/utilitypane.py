@@ -309,7 +309,7 @@ class UtilityPane(Adw.Bin):
     def _confirm_trash(self, row):
         dialog = Adw.AlertDialog(
             heading="Move File to Trash?",
-            body=f"“{row.file.get_basename()}” will be removed from GNORG and moved to Trash.",
+            body=f"“{row.file.get_basename()}” will be removed from Gnorg and moved to Trash.",
             close_response="cancel", default_response="cancel")
         dialog.add_response("cancel", "_Cancel")
         dialog.add_response("trash", "Move to _Trash")

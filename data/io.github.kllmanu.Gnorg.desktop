@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=GNORG
+Name=Gnorg
 Comment=Gnorg is not org - an Org mode editor with Vim keybindings
 Exec=gnorg %F
 Icon=accessories-text-editor

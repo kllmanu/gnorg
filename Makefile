@@ -10,7 +10,7 @@ test:
 
 schemas: data/gschemas.compiled
 
-data/gschemas.compiled: data/io.github.kllmanu.Organizer.gschema.xml
+data/gschemas.compiled: data/io.github.kllmanu.Gnorg.gschema.xml
 	glib-compile-schemas --strict data
 
 install:
@@ -20,14 +20,16 @@ install:
 	install -Dm644 -t $(APP_DIR)/styles data/styles/*.xml
 	install -d $(PREFIX)/bin
 	ln -sf $(APP_DIR)/app.py $(PREFIX)/bin/gnorg
-	install -Dm644 data/io.github.kllmanu.Organizer.desktop $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
-	install -Dm644 data/io.github.kllmanu.Organizer.gschema.xml $(SCHEMA_DIR)/io.github.kllmanu.Organizer.gschema.xml
+	install -Dm644 data/io.github.kllmanu.Gnorg.desktop $(PREFIX)/share/applications/io.github.kllmanu.Gnorg.desktop
+	install -Dm644 data/io.github.kllmanu.Gnorg.gschema.xml $(SCHEMA_DIR)/io.github.kllmanu.Gnorg.gschema.xml
+	rm -f $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
+	rm -f $(SCHEMA_DIR)/io.github.kllmanu.Organizer.gschema.xml
 	glib-compile-schemas $(SCHEMA_DIR)
 
 uninstall:
 	rm -rf $(APP_DIR)
-	rm -f $(PREFIX)/bin/gnorg $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
-	rm -f $(SCHEMA_DIR)/io.github.kllmanu.Organizer.gschema.xml
+	rm -f $(PREFIX)/bin/gnorg $(PREFIX)/share/applications/io.github.kllmanu.Gnorg.desktop
+	rm -f $(SCHEMA_DIR)/io.github.kllmanu.Gnorg.gschema.xml
 	glib-compile-schemas $(SCHEMA_DIR)
 
 .PHONY: run test schemas install uninstall

@@ -101,7 +101,7 @@ class SessionTests(EditorTestCase):
                 os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data")),
                 Gio.SettingsSchemaSource.get_default(), False)
             settings = Gio.Settings.new_full(
-                source.lookup("io.github.kllmanu.Organizer", False),
+                source.lookup("io.github.kllmanu.Gnorg", False),
                 Gio.memory_settings_backend_new(), None)
             settings.set_string("agenda-directory", directory)
             files = []
@@ -139,7 +139,7 @@ class SessionTests(EditorTestCase):
             os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data")),
             Gio.SettingsSchemaSource.get_default(), False)
         settings = Gio.Settings.new_full(
-            source.lookup("io.github.kllmanu.Organizer", False),
+            source.lookup("io.github.kllmanu.Gnorg", False),
             Gio.memory_settings_backend_new(), None)
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "folded.org")

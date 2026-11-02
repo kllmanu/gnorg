@@ -7,10 +7,49 @@ from unittest.mock import Mock
 from editor_test_case import EditorTestCase
 from vim import Gio
 from vim import Gtk
-from vim import OrganizerApplication
+from vim import GnorgApplication, APP_ID, LEGACY_APP_ID, GLib
 
 
 class PreferenceTests(EditorTestCase):
+    def test_legacy_settings_migrate_once_without_overwriting_gnorg(self):
+        directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
+        source = Gio.SettingsSchemaSource.new_from_directory(
+            directory, Gio.SettingsSchemaSource.get_default(), False)
+        backend = Gio.memory_settings_backend_new()
+        settings = Gio.Settings.new_full(source.lookup(APP_ID, False), backend, None)
+        legacy = Gio.Settings.new_full(source.lookup(LEGACY_APP_ID, False), backend, None)
+        legacy.set_int("editor-padding", 28)
+        legacy.set_int("agenda-padding", 32)
+        legacy.set_strv("session-files", ["file:///tmp/tasks.org"])
+        legacy.set_value("session-cursor-positions",
+                         GLib.Variant("a{s(uu)}", {"file:///tmp/tasks.org": (12, 3)}))
+        settings.set_int("editor-padding", 20)
+        GnorgApplication._migrate_settings(settings, legacy)
+        self.assertEqual(settings.get_int("editor-padding"), 20)
+        self.assertEqual(settings.get_int("agenda-padding"), 32)
+        self.assertEqual(settings.get_strv("session-files"), ["file:///tmp/tasks.org"])
+        self.assertEqual(settings.get_value("session-cursor-positions").unpack(),
+                         {"file:///tmp/tasks.org": (12, 3)})
+        self.assertIsNone(settings.get_user_value("zoom"))
+        self.assertTrue(settings.get_boolean("legacy-settings-migrated"))
+        settings.reset("agenda-padding")
+        legacy.set_int("agenda-padding", 40)
+        GnorgApplication._migrate_settings(settings, legacy)
+        self.assertEqual(settings.get_int("agenda-padding"), 16)
+        self.assertEqual(legacy.get_int("editor-padding"), 28)
+
+    def test_settings_loader_migrates_with_the_bundled_schema(self):
+        directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
+        backend = Gio.memory_settings_backend_new()
+        new_full = Gio.Settings.new_full
+        with (patch("vim.Gio.SettingsSchemaSource.get_default", return_value=None),
+              patch("vim.data_path", return_value=os.path.join(directory, "gschemas.compiled")),
+              patch("vim.Gio.Settings.new_full",
+                    side_effect=lambda schema, _backend, path: new_full(schema, backend, path))):
+            settings = GnorgApplication._load_settings()
+        self.assertEqual(settings.props.settings_schema.get_id(), APP_ID)
+        self.assertTrue(settings.get_boolean("legacy-settings-migrated"))
+
     def test_editor_has_padding_on_all_sides(self):
         tab = self.app.new_tab()
         self.assertEqual((tab.view.get_top_margin(), tab.view.get_bottom_margin(),
@@ -101,7 +140,7 @@ class PreferenceTests(EditorTestCase):
         directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
         source = Gio.SettingsSchemaSource.new_from_directory(
             directory, Gio.SettingsSchemaSource.get_default(), False)
-        schema = source.lookup("io.github.kllmanu.Organizer", False)
+        schema = source.lookup(APP_ID, False)
         settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
         self.assertFalse(settings.get_boolean("show-line-numbers"))
         self.assertTrue(settings.get_boolean("hide-weekends"))
@@ -115,10 +154,10 @@ class PreferenceTests(EditorTestCase):
         settings.set_boolean("jj-escape", False)
         settings.set_int("jj-escape-delay", 300)
         settings.set_string("escape-sequence", "jk")
-        app = OrganizerApplication()
-        app.set_application_id("io.github.kllmanu.Organizer.LineNumberTests")
+        app = GnorgApplication()
+        app.set_application_id("io.github.kllmanu.Gnorg.LineNumberTests")
         app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
-        with (patch.object(OrganizerApplication, "_load_settings", return_value=settings),
+        with (patch.object(GnorgApplication, "_load_settings", return_value=settings),
               patch("vim.data_path", return_value=None)):
             app.register(None)
         self.addCleanup(app.quit)

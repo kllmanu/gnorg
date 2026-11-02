@@ -108,11 +108,11 @@ class EditorTests(EditorTestCase):
 
     def test_application_branding(self):
         tab = self.app.new_tab()
-        self.assertEqual(GLib.get_application_name(), "GNORG")
-        self.assertEqual(tab.window.get_title(), "Untitled – GNORG")
+        self.assertEqual(GLib.get_application_name(), "Gnorg")
+        self.assertEqual(tab.window.get_title(), "Untitled – Gnorg")
         with patch("vim.Adw.AboutDialog") as about:
             self.app._on_about()
-            self.assertEqual(about.call_args.kwargs["application_name"], "GNORG")
+            self.assertEqual(about.call_args.kwargs["application_name"], "Gnorg")
             self.assertIn("Gnorg is not org", about.call_args.kwargs["comments"])
             about.return_value.present.assert_called_once_with(self.app.get_active_window())
 

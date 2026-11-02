@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/">
+  <schema id="io.github.kllmanu.Gnorg.Preferences">
+    <key name="legacy-settings-migrated" type="b">
+      <default>false</default>
+      <summary>Organizer settings migration completed</summary>
+      <description>Copy explicitly saved Organizer preferences and session state once, preserving any existing Gnorg settings. The legacy settings remain untouched.</description>
+    </key>
     <key name="recent-files" type="as">
       <default>[]</default>
       <summary>Recently opened files</summary>
@@ -114,4 +119,8 @@
       <description>Show only Monday through Friday in the weekly calendar without changing dated entries.</description>
     </key>
   </schema>
+  <schema id="io.github.kllmanu.Gnorg" path="/io/github/kllmanu/Gnorg/"
+          extends="io.github.kllmanu.Gnorg.Preferences"/>
+  <schema id="io.github.kllmanu.Organizer" path="/io/github/kllmanu/Organizer/"
+          extends="io.github.kllmanu.Gnorg.Preferences"/>
 </schemalist>

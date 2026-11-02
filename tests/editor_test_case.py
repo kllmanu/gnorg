@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
-from vim import Adw, Gdk, Gio, GLib, Gtk, OrganizerApplication  # noqa: E402
+from vim import Adw, Gdk, Gio, GLib, Gtk, GnorgApplication  # noqa: E402
 
 
 @unittest.skipUnless(Gtk.init_check(), "GTK display required")
@@ -18,10 +18,10 @@ class EditorTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if EditorTestCase.app is None:
-            EditorTestCase.app = OrganizerApplication()
-            EditorTestCase.app.set_application_id("io.github.kllmanu.Organizer.Tests")
+            EditorTestCase.app = GnorgApplication()
+            EditorTestCase.app.set_application_id("io.github.kllmanu.Gnorg.Tests")
             EditorTestCase.app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
-            with patch.object(OrganizerApplication, "_load_settings", return_value=None):
+            with patch.object(GnorgApplication, "_load_settings", return_value=None):
                 EditorTestCase.app.register(None)
 
     def setUp(self):

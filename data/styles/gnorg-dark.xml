@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="organizer-dark" name="GNORG Dark" version="1.0" parent-scheme="Adwaita-dark">
+<style-scheme id="gnorg-dark" name="Gnorg Dark" version="1.0" parent-scheme="Adwaita-dark">
   <description>Adwaita Dark with Org mode styles</description>
 
   <color name="blue" value="#62a0ea"/>

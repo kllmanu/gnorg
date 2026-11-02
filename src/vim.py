@@ -21,8 +21,9 @@ from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgStartupEdit, OrgTagAli
 from bufferpicker import BufferPicker  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
-APP_ID = "io.github.kllmanu.Organizer"
-APP_NAME = "GNORG"
+APP_ID = "io.github.kllmanu.Gnorg"
+LEGACY_APP_ID = "io.github.kllmanu.Organizer"
+APP_NAME = "Gnorg"
 VERSION = "0.2.0"
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -160,7 +161,7 @@ class EditorTab(Adw.Bin):
         self.view = GtkSource.View(
             buffer=self.buffer,
             monospace=True,
-            css_classes=["organizer-editor"],
+            css_classes=["gnorg-editor"],
             show_line_numbers=self.get_application().show_line_numbers,
             highlight_current_line=True,
             auto_indent=True,
@@ -344,7 +345,7 @@ class EditorTab(Adw.Bin):
     def _update_scheme(self):
         dark = Adw.StyleManager.get_default().get_dark()
         schemes = GtkSource.StyleSchemeManager.get_default()
-        scheme = schemes.get_scheme("organizer-dark" if dark else "organizer") or \
+        scheme = schemes.get_scheme("gnorg-dark" if dark else "gnorg") or \
             schemes.get_scheme("Adwaita-dark" if dark else "Adwaita")
         self.buffer.set_style_scheme(scheme)
 
@@ -1435,7 +1436,7 @@ class EditorWindow(Adw.ApplicationWindow):
         return True
 
 
-class OrganizerApplication(Adw.Application):
+class GnorgApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.zoom = None
@@ -1825,7 +1826,7 @@ class OrganizerApplication(Adw.Application):
                 return "The heading was not found, refresh the calendar"
             edit, message = change(lines, idx)
             lines = org.apply_edit(lines, edit)
-            tmp = entry.path + ".organizer-tmp"
+            tmp = entry.path + ".gnorg-tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
             os.replace(tmp, entry.path)
@@ -2111,9 +2112,26 @@ class OrganizerApplication(Adw.Application):
         about.present(self.get_active_window())
 
     @staticmethod
+    def _migrate_settings(settings, legacy):
+        if settings.get_boolean("legacy-settings-migrated"):
+            return
+        for key in settings.props.settings_schema.list_keys():
+            if key == "legacy-settings-migrated" or settings.get_user_value(key) is not None:
+                continue
+            if not legacy.props.settings_schema.has_key(key):
+                continue
+            value = legacy.get_user_value(key)
+            if value is not None and not settings.set_value(key, value):
+                raise RuntimeError(f"{APP_NAME}: could not migrate setting {key}")
+        if not settings.set_boolean("legacy-settings-migrated", True):
+            raise RuntimeError(f"{APP_NAME}: could not mark settings migration complete")
+        Gio.Settings.sync()
+
+    @staticmethod
     def _load_settings():
         """Use the installed schema, or the one compiled next to the sources when run uncompiled."""
         default = Gio.SettingsSchemaSource.get_default()
+        source = default
         schema = default.lookup(APP_ID, True) if default else None
         compiled = data_path("gschemas.compiled")
         if schema is None and compiled:
@@ -2123,7 +2141,14 @@ class OrganizerApplication(Adw.Application):
             print(f"{APP_NAME}: settings schema {APP_ID} not found, preferences won't be saved "
                   "(run `make schemas` or `make install`)", file=sys.stderr)
             return None
-        return Gio.Settings.new_full(schema, None, None)
+        settings = Gio.Settings.new_full(schema, None, None)
+        legacy_schema = source.lookup(LEGACY_APP_ID, True)
+        if not settings.get_boolean("legacy-settings-migrated"):
+            if legacy_schema is None:
+                raise RuntimeError(f"{APP_NAME}: legacy settings schema {LEGACY_APP_ID} not found")
+            GnorgApplication._migrate_settings(
+                settings, Gio.Settings.new_full(legacy_schema, None, None))
+        return settings
 
     def setup_scroll_zoom(self, widget):
         controller = Gtk.EventControllerScroll(
@@ -2145,7 +2170,7 @@ class OrganizerApplication(Adw.Application):
         self.zoom = zoom
         font_size = BASE_FONT_SIZE * zoom / 100
         self.zoom_css.load_from_string(
-            f'textview.organizer-editor, .organizer-agenda label, .fold-indicator {{ '
+            f'textview.gnorg-editor, .gnorg-agenda label, .fold-indicator {{ '
             f'font-family: "Iosevka", monospace; '
             f"font-size: {font_size:g}pt; }}")
         for window in self.editor_tabs():

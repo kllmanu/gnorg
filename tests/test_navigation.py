@@ -179,7 +179,7 @@ class NavigationTests(EditorTestCase):
                 None, Gdk.KEY_c, 0, Gdk.ModifierType.CONTROL_MASK))
             self.assertTrue(window._on_key_pressed(None, Gdk.KEY_c, 0, Gdk.ModifierType(0)))
             self.assertIs(window.active_view, window.agenda)
-            self.assertEqual(window.get_title(), "Calendar – GNORG")
+            self.assertEqual(window.get_title(), "Calendar – Gnorg")
             self.assertIn("C-c a", window.active_view._org_key_sequences.commands)
         self.assertIn("C-c a", tab._org_key_sequences.commands)
         self.assertIn("C-c C-c", tab._org_key_sequences.commands)

@@ -8,7 +8,7 @@ from unittest.mock import Mock
 from editor_test_case import EditorTestCase
 from vim import Gio, GLib
 from vim import Gdk, Gtk
-from vim import OrganizerApplication
+from vim import GnorgApplication
 from vim import Adw
 
 
@@ -365,16 +365,16 @@ class UtilityPaneTests(EditorTestCase):
         directory = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
         source = Gio.SettingsSchemaSource.new_from_directory(
             directory, Gio.SettingsSchemaSource.get_default(), False)
-        schema = source.lookup("io.github.kllmanu.Organizer", False)
+        schema = source.lookup("io.github.kllmanu.Gnorg", False)
         settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
         settings.set_strv("hidden-agenda-files", ["file:///org/hidden.org"])
         settings.set_strv("utility-file-order", ["file:///org/b.org", "file:///org/a.org"])
         settings.set_strv("removed-files", ["file:///org/removed.org"])
         settings.set_value("file-colors", GLib.Variant("a{ss}", {"file:///org/a.org": "#123456"}))
-        with (patch.object(OrganizerApplication, "_load_settings", return_value=settings),
+        with (patch.object(GnorgApplication, "_load_settings", return_value=settings),
               patch("vim.data_path", return_value=None)):
-            app = OrganizerApplication()
-            app.set_application_id("io.github.kllmanu.Organizer.VisibilityTests")
+            app = GnorgApplication()
+            app.set_application_id("io.github.kllmanu.Gnorg.VisibilityTests")
             app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
             app.register(None)
         self.addCleanup(app.quit)

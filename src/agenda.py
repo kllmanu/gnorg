@@ -147,7 +147,7 @@ class AgendaView(Adw.Bin):
             self.view.remove(header_row)
             self.view.remove(self.scroller)
             self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
-                                       css_classes=["organizer-agenda"])
+                                       css_classes=["gnorg-agenda"])
             self.set_padding(self.app.agenda_padding)
             self.scroller = Gtk.ScrolledWindow(child=self.listbox, vexpand=True)
             self.view.append(self.scroller)
@@ -163,11 +163,11 @@ class AgendaView(Adw.Bin):
             .calendar-event.deadline { background: alpha(@error_color, 0.15);
                 border-left-color: @error_color; }
             .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
-            .organizer-agenda > row { padding: 0; }
-            .organizer-agenda button { padding: 0; min-height: 0; font-weight: normal; }
-            .organizer-agenda button.agenda-cursor {
+            .gnorg-agenda > row { padding: 0; }
+            .gnorg-agenda button { padding: 0; min-height: 0; font-weight: normal; }
+            .gnorg-agenda button.agenda-cursor {
                 background: alpha(@accent_bg_color, 0.18); }
-            .organizer-agenda row.agenda-today {
+            .gnorg-agenda row.agenda-today {
                 background: alpha(@view_fg_color, 0.06); }
         """ + "\n".join(
             f".calendar-event.file-color-{index} {{ "
@@ -406,7 +406,7 @@ class AgendaView(Adw.Bin):
     def _line_attributes(self, line):
         dark = Adw.StyleManager.get_default().get_dark()
         scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(
-            "organizer-dark" if dark else "organizer")
+            "gnorg-dark" if dark else "gnorg")
         attributes = Pango.AttrList()
         if scheme is None:
             return attributes

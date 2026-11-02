@@ -234,7 +234,7 @@ class AgendaTests(EditorTestCase):
         self.assertTrue(tab.window._on_key_pressed(None, Gdk.KEY_a, 0, Gdk.ModifierType(0)))
         agenda = tab.window.weekly_agenda
         self.assertIs(tab.window.active_view, agenda)
-        self.assertEqual(tab.window.get_title(), "Agenda – GNORG")
+        self.assertEqual(tab.window.get_title(), "Agenda – Gnorg")
         start = agenda.start
         saturday = start + dt.timedelta(days=5)
         text = (f"* TODO Scheduled task\nSCHEDULED: <{start.isoformat()} 09:00>\n"
