@@ -29,6 +29,7 @@
     <style id="italic" name="Italic" map-to="def:emphasis"/>
     <style id="underline" name="Underline" map-to="def:underlined"/>
     <style id="verbatim" name="Verbatim" map-to="def:inline-code"/>
+    <style id="code" name="Code" map-to="def:inline-code"/>
     <style id="strikethrough" name="Strikethrough" map-to="def:deletion"/>
     <style id="comment" name="Comment" map-to="def:comment"/>
     <style id="meta" name="Keyword line" map-to="def:preprocessor"/>
@@ -62,20 +63,34 @@
     </context>
 
     <!-- Emphasis: org requires whitespace/punctuation around the markers -->
-    <context id="bold" style-ref="bold">
+    <context id="bold" style-ref="bold" class="org-bold">
       <match>(?&lt;![^\s({'"-])\*[^\s*](?:[^*\n]*[^\s*])?\*(?=[\s.,;:!?'")}\]-]|$)</match>
     </context>
-    <context id="italic" style-ref="italic">
+    <context id="italic" style-ref="italic" class="org-italic">
       <match>(?&lt;![^\s({'"-])/[^\s/](?:[^/\n]*[^\s/])?/(?=[\s.,;:!?'")}\]-]|$)</match>
     </context>
-    <context id="underline" style-ref="underline">
+    <context id="underline" style-ref="underline" class="org-underline">
       <match>(?&lt;![^\s({'"-])_[^\s_](?:[^_\n]*[^\s_])?_(?=[\s.,;:!?'")}\]-]|$)</match>
     </context>
-    <context id="verbatim" style-ref="verbatim">
-      <match>(?&lt;![^\s({'"-])(?:=[^\s=](?:[^=\n]*[^\s=])?=|~[^\s~](?:[^~\n]*[^\s~])?~)(?=[\s.,;:!?'")}\]-]|$)</match>
+    <context id="verbatim" style-ref="verbatim" class="org-verbatim no-spell-check">
+      <match>(?&lt;![^\s({'"-])=[^\s=](?:[^=\n]*[^\s=])?=(?=[\s.,;:!?'")}\]-]|$)</match>
     </context>
-    <context id="strikethrough" style-ref="strikethrough">
+    <context id="code" style-ref="code" class="org-code no-spell-check">
+      <match>(?&lt;![^\s({'"-])~[^\s~](?:[^~\n]*[^\s~])?~(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+    <context id="strikethrough" style-ref="strikethrough" class="org-strikethrough">
       <match>(?&lt;![^\s({'"-])\+[^\s+](?:[^+\n]*[^\s+])?\+(?=[\s.,;:!?'")}\]-]|$)</match>
+    </context>
+
+    <context id="emphasis">
+      <include>
+        <context ref="verbatim"/>
+        <context ref="code"/>
+        <context ref="bold"/>
+        <context ref="italic"/>
+        <context ref="underline"/>
+        <context ref="strikethrough"/>
+      </include>
     </context>
 
     <context id="inline">
@@ -84,11 +99,7 @@
         <context ref="timestamp"/>
         <context ref="timestamp-inactive"/>
         <context ref="link"/>
-        <context ref="bold"/>
-        <context ref="italic"/>
-        <context ref="underline"/>
-        <context ref="verbatim"/>
-        <context ref="strikethrough"/>
+        <context ref="emphasis"/>
       </include>
     </context>
 
@@ -100,6 +111,7 @@
         <context ref="timestamp"/>
         <context ref="timestamp-inactive"/>
         <context ref="link"/>
+        <context ref="emphasis"/>
       </include>
     </context>
 
@@ -109,6 +121,7 @@
       <include>
         <context sub-pattern="1" where="start" style-ref="done"/>
         <context ref="tags"/>
+        <context ref="emphasis"/>
       </include>
     </context>
 
@@ -190,6 +203,9 @@
 
     <context id="table" style-ref="table" end-at-line-end="true">
       <start>^[ \t]*\|</start>
+      <include>
+        <context ref="inline"/>
+      </include>
     </context>
 
     <context id="list-item">

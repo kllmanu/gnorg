@@ -30,6 +30,10 @@
   <style name="org:checkbox" foreground="orange" bold="true"/>
   <style name="org:link" foreground="link" underline="single"/>
   <style name="org:verbatim" foreground="purple"/>
+  <style name="org:code" foreground="purple"/>
+  <style name="org:bold" bold="true"/>
+  <style name="org:italic" italic="true"/>
+  <style name="org:underline" underline="single"/>
   <style name="org:strikethrough" strikethrough="true"/>
   <style name="org:meta" foreground="grey"/>
   <style name="org:block" foreground="#a0a8f0"/>
