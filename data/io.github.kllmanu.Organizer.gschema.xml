@@ -40,6 +40,11 @@
       <summary>Show line numbers</summary>
       <description>Display line numbers beside the text in all file editors.</description>
     </key>
+    <key name="auto-revert" type="b">
+      <default>true</default>
+      <summary>Automatically reload files changed on disk</summary>
+      <description>Monitor open documents and reload externally changed files when there are no unsaved edits. Unsaved edits are preserved with a warning instead of being overwritten. Reloads keep the cursor position where possible and update Calendar and Agenda. Enabling this setting also checks already open files.</description>
+    </key>
     <key name="zoom" type="i">
       <range min="30" max="400"/>
       <default>100</default>

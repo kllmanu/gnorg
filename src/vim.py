@@ -83,6 +83,13 @@ class EditorTab(Adw.Bin):
         self._force_close = False
         self._zoom_toast = None
         self._active_date_popover = None
+        self._file_monitor = None
+        self._revert_timeout = 0
+        self._revert_generation = 0
+        self._disk_contents = None
+        self._saving = 0
+        self._external_change_warned = False
+        self.connect("destroy", lambda *_: self.stop_auto_revert())
 
         self._build_editor()
         self._build_ui()
@@ -617,9 +624,94 @@ class EditorTab(Adw.Bin):
         self.org_fold.reset()
         self.buffer.place_cursor(self.buffer.get_start_iter())
         self.buffer.set_modified(False)
+        self._disk_contents = raw if raw is not None else text.encode("utf-8")
+        self._external_change_warned = False
+        self.setup_auto_revert()
         self._update_language(raw)
         self._update_title()
         self.view.grab_focus()
+
+    def stop_auto_revert(self):
+        self._revert_generation += 1
+        if self._revert_timeout:
+            GLib.source_remove(self._revert_timeout)
+            self._revert_timeout = 0
+        if self._file_monitor:
+            self._file_monitor.cancel()
+            self._file_monitor = None
+
+    def setup_auto_revert(self, check=False):
+        self.stop_auto_revert()
+        if self.file is None or not self.get_application().auto_revert:
+            return
+        parent = self.file.get_parent()
+        try:
+            self._file_monitor = (
+                parent.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None) if parent
+                else self.file.monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, None))
+        except GLib.Error as error:
+            self.toast(f"Could not watch file for changes: {error.message}")
+            return
+        self._file_monitor.connect("changed", self._on_disk_changed)
+        if check:
+            self._queue_auto_revert()
+
+    def _on_disk_changed(self, _monitor, file, other_file, _event):
+        if self.file and (file.equal(self.file) or other_file and other_file.equal(self.file)):
+            self._queue_auto_revert()
+
+    def _queue_auto_revert(self):
+        if self._revert_timeout:
+            GLib.source_remove(self._revert_timeout)
+        self._revert_timeout = GLib.timeout_add(200, self._reload_from_disk)
+
+    def _reload_from_disk(self):
+        self._revert_timeout = 0
+        if not self._file_monitor or self._saving:
+            return GLib.SOURCE_REMOVE
+        self._revert_generation += 1
+        generation = self._revert_generation
+        file = self.file
+
+        def loaded(source, result):
+            try:
+                _ok, contents, _etag = source.load_contents_finish(result)
+            except GLib.Error as error:
+                if generation == self._revert_generation and not self._external_change_warned:
+                    self._external_change_warned = True
+                    self.toast(f"Could not reload file: {error.message}")
+                return
+            if generation != self._revert_generation or self._saving or not source.equal(self.file):
+                return
+            if contents == self._disk_contents:
+                return
+            if self.buffer.get_modified():
+                if not self._external_change_warned:
+                    self.toast("File changed on disk. Your unsaved edits have been kept.")
+                    self._external_change_warned = True
+                return
+            text = contents.decode("utf-8", errors="replace")
+            cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+            line, offset = cursor.get_line(), cursor.get_line_offset()
+            if text != self.get_text():
+                self.buffer.begin_irreversible_action()
+                self.buffer.set_text(text)
+                self.buffer.end_irreversible_action()
+                self.org_fold.reset()
+                line = min(line, self.buffer.get_line_count() - 1)
+                iterator = self.buffer.get_iter_at_line(line)[1]
+                end = iterator.copy()
+                end.forward_to_line_end()
+                iterator.forward_chars(min(offset, end.get_offset() - iterator.get_offset()))
+                self.buffer.place_cursor(iterator)
+                self.buffer.set_modified(False)
+                self._update_language(contents)
+            self._disk_contents = contents
+            self._external_change_warned = False
+            self.get_application().queue_agenda_refresh()
+
+        file.load_contents_async(None, loaded)
+        return GLib.SOURCE_REMOVE
 
     def _update_language(self, raw=None):
         name = self.file.get_basename()
@@ -670,22 +762,31 @@ class EditorTab(Adw.Bin):
                 file = destination
         start, end = self.buffer.get_bounds()
         text = self.buffer.get_text(start, end, True)
+        saved_text = text
         if text and not text.endswith("\n"):
             text += "\n"
         data = text.encode("utf-8")
+        self._saving += 1
+        self._revert_generation += 1
 
         def on_saved(f, res):
+            self._saving -= 1
             try:
                 f.replace_contents_finish(res)
             except GLib.Error as e:
                 self.toast(f"Could not save file: {e.message}")
                 if on_cancel:
                     on_cancel()
+                if self._file_monitor:
+                    self._queue_auto_revert()
                 return
             if self.file is None or not self.file.equal(f):
                 self.file = f
                 self._update_language()
-            self.buffer.set_modified(False)
+            self.buffer.set_modified(self.get_text() != saved_text)
+            self._disk_contents = data
+            self._external_change_warned = False
+            self.setup_auto_revert(check=True)
             self.get_application().remember_file(f)
             self._update_title()
             self.toast(f"“{f.get_basename()}” written, {len(data)} bytes")
@@ -906,6 +1007,7 @@ class EditorWindow(Adw.ApplicationWindow):
         def finish(confirmed):
             if confirmed:
                 tab = page.get_child()
+                tab.stop_auto_revert()
                 offset = tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_offset()
                 self._closed_tabs.append(
                     (tab.file, tab.get_text(), tab.buffer.get_modified(), offset))
@@ -935,6 +1037,7 @@ class OrganizerApplication(Adw.Application):
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
         self.show_line_numbers = False
+        self.auto_revert = True
         self.hide_weekends = True
         self._quitting = False
         self._session_restored = False
@@ -962,6 +1065,7 @@ class OrganizerApplication(Adw.Application):
         if self.settings:
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
+            self.auto_revert = self.settings.get_boolean("auto-revert")
             self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
             self.hidden_agenda_files = set(self.settings.get_strv("hidden-agenda-files"))
@@ -1184,6 +1288,7 @@ class OrganizerApplication(Adw.Application):
             for tab in documents:
                 if tab in self.editor_tabs() and tab.file.equal(file):
                     tab.file = renamed_file
+                    tab.setup_auto_revert(check=True)
                     tab._update_language()
                     tab._update_title()
             self.queue_agenda_refresh()
@@ -1347,6 +1452,13 @@ class OrganizerApplication(Adw.Application):
         line_numbers_row.connect(
             "notify::active", lambda row, *_: self.set_show_line_numbers(row.get_active()))
         editor_group.add(line_numbers_row)
+        auto_revert_row = Adw.SwitchRow(
+            title="Automatically Reload Files",
+            subtitle="Reload files changed on disk. Unsaved edits are kept and a warning is shown.",
+            active=self.auto_revert)
+        auto_revert_row.connect(
+            "notify::active", lambda row, *_: self.set_auto_revert(row.get_active()))
+        editor_group.add(auto_revert_row)
         page.add(editor_group)
         group = Adw.PreferencesGroup(
             title="Calendar",
@@ -1409,6 +1521,13 @@ class OrganizerApplication(Adw.Application):
             self.settings.set_boolean("show-line-numbers", enabled)
         for tab in self.editor_tabs():
             tab.view.set_show_line_numbers(enabled)
+
+    def set_auto_revert(self, enabled):
+        self.auto_revert = enabled
+        if self.settings:
+            self.settings.set_boolean("auto-revert", enabled)
+        for tab in self.editor_tabs():
+            tab.setup_auto_revert(check=enabled)
 
     def set_hide_weekends(self, enabled):
         self.hide_weekends = enabled
