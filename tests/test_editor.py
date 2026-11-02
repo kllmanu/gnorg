@@ -7,6 +7,42 @@ from vim import GLib, Gtk
 
 
 class EditorTests(EditorTestCase):
+    def test_clicking_heading_title_toggles_immediate_children_without_cycling(self):
+        tab = self.app.new_tab()
+        text = "* TODO Parent :work:\nBody\n** Child\nDetails\n* Next\nTail\n"
+        tab.buffer.set_text(text)
+        tab.buffer.set_modified(False)
+        tab.present()
+        self.wait_for(tab.view.get_mapped)
+        interaction = tab.org_todo_interaction
+
+        def point():
+            rect = tab.view.get_iter_location(tab.buffer.get_iter_at_line_offset(0, 7)[1])
+            return tab.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+
+        self.wait_for(lambda: interaction._target_at(*point()) == (0, "heading"))
+        for expected_hidden in (True, False, True, False):
+            gesture = Mock()
+            interaction._pressed(gesture, 1, *point())
+            gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+            self.assertEqual(tab.buffer.get_iter_at_line(2)[1].has_tag(
+                tab.org_fold.hidden), expected_hidden)
+            for line in (1, 3):
+                self.assertTrue(tab.buffer.get_iter_at_line(line)[1].has_tag(
+                    tab.org_fold.hidden))
+            self.assertFalse(tab.buffer.get_iter_at_line(4)[1].has_tag(tab.org_fold.hidden))
+        self.assertEqual(tab.get_text(), text)
+        self.assertFalse(tab.buffer.get_modified())
+        tab.org_fold.cycle(global_cycle=True)
+        tab.org_fold.cycle(global_cycle=True)
+        tab.org_fold.toggle(0)
+        self.assertTrue(all(tab.buffer.get_iter_at_line(line)[1].has_tag(
+            tab.org_fold.hidden) for line in (1, 2, 3)))
+        tab.org_fold.toggle(0)
+        self.assertFalse(tab.buffer.get_iter_at_line(2)[1].has_tag(tab.org_fold.hidden))
+        self.assertTrue(tab.buffer.get_iter_at_line(3)[1].has_tag(tab.org_fold.hidden))
+
     def test_clicking_list_checkboxes_toggles_with_pointer_and_undo(self):
         tab = self.app.new_tab()
         text = "* Tasks\n- [ ] First\n  1. [X] Second\n+ [-] Third\nPlain [ ] text\n"

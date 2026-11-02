@@ -249,6 +249,31 @@ class OrgFold:
                 headings.append((i, heading[0]))
         return lines, headings
 
+    def toggle(self, line):
+        self.refresh()
+        lines, headings = self._headings()
+        level = next((depth for i, depth in headings if i == line), None)
+        if level is None:
+            return False
+        end = next((i for i, depth in headings if i > line and depth <= level), len(lines))
+        children = [(i, depth) for i, depth in headings if line < i < end]
+        child_level = min((depth for _, depth in children), default=level + 1)
+        child_lines = {i for i, depth in children if depth == child_level}
+        visible = child_lines or set(range(line + 1, end))
+        folded = bool(visible) and all(
+            self.buffer.get_iter_at_line(i)[1].has_tag(self.hidden) for i in visible)
+        for entry in list(self.states):
+            mark, _state = entry
+            if line <= self.buffer.get_iter_at_mark(mark).get_line() < end:
+                self.states.remove(entry)
+                self.buffer.delete_mark(mark)
+        self.buffer.place_cursor(self.buffer.get_iter_at_line(line)[1])
+        mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
+        self.states.append((mark, ("children" if child_lines else "subtree")
+                            if folded else "folded"))
+        self.refresh()
+        return True
+
     def cycle(self, global_cycle=False):
         self.refresh()
         lines, headings = self._headings()
@@ -381,12 +406,13 @@ class OrgFold:
 
 
 class OrgTodoInteraction:
-    """Make task keywords and list checkboxes clickable without selecting other text."""
+    """Handle heading, task keyword, and checkbox pointer interactions."""
 
-    def __init__(self, view, cycle, toggle_checkbox):
+    def __init__(self, view, cycle, toggle_checkbox, toggle_heading):
         self.view = view
         self.cycle = cycle
         self.toggle_checkbox = toggle_checkbox
+        self.toggle_heading = toggle_heading
         self._hovering = False
         motion = Gtk.EventControllerMotion(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         motion.connect("enter", self._motion)
@@ -398,6 +424,10 @@ class OrgTodoInteraction:
         view.add_controller(click)
 
     def _keyword_at(self, x, y):
+        target = self._target_at(x, y)
+        return target[0] if target is not None and target[1] != "heading" else None
+
+    def _target_at(self, x, y):
         bx, by = self.view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, int(x), int(y))
         buffer = self.view.get_buffer()
         _ok, iterator = self.view.get_iter_at_location(bx, by)
@@ -410,14 +440,33 @@ class OrgTodoInteraction:
             end.forward_to_line_end()
         text = buffer.get_text(start, end, True)
         match = org.HEADING_KEYWORD_RE.match(text)
-        if match is not None and match[2] is not None:
-            offset, text = match.start(2), match[2]
+        if match is not None:
+            if match[2] is not None and self._span_contains(
+                    start.get_line(), match.start(2), match[2], bx, by):
+                return start.get_line(), "keyword"
+            offset, text = match.start(3), match[3] or ""
+            if offset < 0:
+                return None
+            if priority := org.PRIORITY_RE.match(text):
+                offset += priority.end()
+                text = text[priority.end():]
+            if tags := org.TAGS_RE.search(text):
+                text = text[:tags.start()]
+            kind = "heading"
         elif checkbox := org.CHECKBOX_RE.match(text):
             offset = checkbox.start(2) - 1
             text = text[offset:checkbox.end()]
+            kind = "checkbox"
         else:
             return None
-        keyword = buffer.get_iter_at_line_offset(start.get_line(), offset)[1]
+        if self._span_contains(start.get_line(), offset, text.rstrip(), bx, by):
+            return start.get_line(), kind
+        return None
+
+    def _span_contains(self, line, offset, text, bx, by):
+        if not text:
+            return False
+        keyword = self.view.get_buffer().get_iter_at_line_offset(line, offset)[1]
         rect = self.view.get_iter_location(keyword)
         layout = self.view.create_pango_layout(text)
         attributes = Pango.AttrList()
@@ -425,12 +474,11 @@ class OrgTodoInteraction:
             if tag.props.weight_set:
                 attributes.change(Pango.attr_weight_new(tag.props.weight))
         layout.set_attributes(attributes)
-        if rect.x <= bx < rect.x + layout.get_pixel_size()[0] and rect.y <= by < rect.y + rect.height:
-            return start.get_line()
-        return None
+        return (rect.x <= bx < rect.x + layout.get_pixel_size()[0]
+                and rect.y <= by < rect.y + rect.height)
 
     def _motion(self, _controller, x, y):
-        hovering = self._keyword_at(x, y) is not None
+        hovering = self._target_at(x, y) is not None
         if hovering or self._hovering:
             _set_pointer_hover(self.view, self, hovering)
         self._hovering = hovering
@@ -441,15 +489,14 @@ class OrgTodoInteraction:
         self._hovering = False
 
     def _pressed(self, gesture, _n_press, x, y):
-        line = self._keyword_at(x, y)
-        if line is not None:
+        target = self._target_at(x, y)
+        if target is not None:
+            line, kind = target
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-            buffer = self.view.get_buffer()
-            start = buffer.get_iter_at_line(line)[1]
-            end = start.copy()
-            end.forward_to_line_end()
-            if org.CHECKBOX_RE.match(buffer.get_text(start, end, True)):
+            if kind == "checkbox":
                 self.toggle_checkbox(line)
+            elif kind == "heading":
+                self.toggle_heading(line)
             else:
                 self.cycle(line)
 

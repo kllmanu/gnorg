@@ -124,7 +124,8 @@ class EditorTab(Adw.Bin):
         self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view, self._edit_tags_at_line)
         self.org_todo_interaction = OrgTodoInteraction(
-            self.view, self._cycle_todo_at_line, self._toggle_checkbox_at_line)
+            self.view, self._cycle_todo_at_line, self._toggle_checkbox_at_line,
+            self.org_fold.toggle)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() in (
                 GLib.dgettext("gtksourceview-5", "-- VISUAL LINE --"),
