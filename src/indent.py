@@ -180,12 +180,7 @@ class OrgFold:
                 end = previous
             last = end.copy()
             last.backward_char()
-            # The separator's stretched glyph must not move the fold indicator.
             rect = self.view.get_iter_location(last if match else end)
-            position = (rect.x + rect.width if match else rect.x, rect.y)
-            if self._indicator_positions.get(line) != position:
-                self.view.move_overlay(label, *position)
-                self._indicator_positions[line] = position
             color = None
             weight = Pango.Weight.NORMAL
             for tag in sorted(last.get_tags(), key=lambda tag: tag.get_priority()):
@@ -203,6 +198,17 @@ class OrgFold:
                 attributes.insert(Pango.attr_weight_new(weight))
                 label.set_attributes(attributes)
                 self._indicator_styles[line] = style
+            x = rect.x
+            if match:
+                # Measure the unstretched title; separator spacing can affect its last glyph.
+                title = self.buffer.get_text(start, end, False)
+                layout = self.view.create_pango_layout(title)
+                layout.set_attributes(label.get_attributes())
+                x = self.view.get_iter_location(start).x + layout.get_pixel_size()[0]
+            position = (x, rect.y)
+            if self._indicator_positions.get(line) != position:
+                self.view.move_overlay(label, *position)
+                self._indicator_positions[line] = position
         return GLib.SOURCE_CONTINUE
 
     def queue_refresh(self):

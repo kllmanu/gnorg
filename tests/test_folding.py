@@ -243,26 +243,29 @@ class FoldingTests(EditorTestCase):
 
     def test_fold_dots_stay_after_title_before_right_aligned_tags(self):
         tab = self.app.new_tab()
-        text = "* Parent :work:home:\nBody\n* Next\n"
+        text = "* Parent\n** asdf :work:home:\nBody\n** asdf\nBody\n* Next\n"
         tab.buffer.set_text(text)
         tab.buffer.set_modified(False)
-        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.buffer.place_cursor(tab.buffer.get_iter_at_line(1)[1])
         tab.present()
         tab.org_fold.cycle()
-        label = tab.org_fold.indicators[0]
+        label = tab.org_fold.indicators[1]
 
         def aligned():
-            last = tab.buffer.get_iter_at_line_offset(0, len("* Parent") - 1)[1]
-            rect = tab.view.get_iter_location(last)
+            rect = tab.view.get_iter_location(
+                tab.buffer.get_iter_at_line_offset(1, 0)[1])
+            reference = tab.view.get_iter_location(
+                tab.buffer.get_iter_at_line_offset(3, len("** asdf"))[1])
+            title_end = reference.x
             x, y = tab.view.buffer_to_window_coords(
-                Gtk.TextWindowType.WIDGET, rect.x + rect.width, rect.y)
+                Gtk.TextWindowType.WIDGET, title_end, rect.y)
             ok, bounds = label.compute_bounds(tab.view)
             tags = tab.view.get_iter_location(
-                tab.buffer.get_iter_at_line_offset(0, len("* Parent "))[1])
+                tab.buffer.get_iter_at_line_offset(1, len("** asdf "))[1])
             return (ok and label.get_width() > 0
                     and abs(bounds.get_x() - x) <= 1
                     and abs(bounds.get_y() - y) <= 1
-                    and rect.x + rect.width + label.get_width() < tags.x)
+                    and title_end + label.get_width() < tags.x)
 
         self.wait_for(aligned)
         old_width = tab.view.get_width()
