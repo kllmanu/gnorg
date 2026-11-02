@@ -185,6 +185,7 @@ class EditorTab(Adw.Bin):
         menu = Gio.Menu()
         file_section = Gio.Menu()
         file_section.append("Save As…", "win.save-as")
+        file_section.append("Open in Emacs", "win.open-in-emacs")
         menu.append_section(None, file_section)
         view_section = Gio.Menu()
         view_section.append("Vim Mode", "win.vim-mode")
@@ -320,6 +321,7 @@ class EditorTab(Adw.Bin):
         add("open", self.open_dialog)
         add("save", self.save)
         add("save-as", self.save_as)
+        add("open-in-emacs", self.open_in_emacs)
         vim_action = Gio.SimpleAction.new_stateful("vim-mode", None, GLib.Variant.new_boolean(True))
         vim_action.connect("change-state", self._on_vim_mode_changed)
         self.actions.add_action(vim_action)
@@ -1117,6 +1119,48 @@ class EditorTab(Adw.Bin):
         language = manager.guess_language(name, content_type) or manager.get_language("org")
         self.buffer.set_language(language)
 
+    def open_in_emacs(self):
+        self._flush_escape_prefix()
+        if self.file is not None and self.file.get_path() is None:
+            self.toast("Open in Emacs requires a local file")
+            return
+        if not GLib.find_program_in_path("emacsclient"):
+            self.toast("Could not open in Emacs: emacsclient is not installed")
+            return
+        if self.file is None or self.buffer.get_modified():
+            dialog = Adw.AlertDialog(
+                heading="Save Before Opening in Emacs?",
+                body="Save this document so Emacs opens the latest changes.",
+                close_response="cancel", default_response="save")
+            dialog.add_response("cancel", "_Cancel")
+            dialog.add_response("save", "_Save and Open")
+            dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+            dialog.connect("response", lambda _dialog, response:
+                           self.save(then=self.open_in_emacs) if response == "save" else None)
+            dialog.present(self.window)
+            return
+        cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        argv = ["emacsclient", "--no-wait", "--create-frame", "--alternate-editor=emacs",
+                f"+{cursor.get_line() + 1}:{cursor.get_line_offset() + 1}", self.file.get_path()]
+        try:
+            process = Gio.Subprocess.new(
+                argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE)
+        except GLib.Error as error:
+            self.toast(f"Could not open in Emacs: {error.message}")
+            return
+
+        def finished(source, result):
+            try:
+                _success, _stdout, stderr = source.communicate_utf8_finish(result)
+            except GLib.Error as error:
+                self.toast(f"Could not open in Emacs: {error.message}")
+                return
+            if not source.get_successful():
+                detail = (stderr or "").strip() or "emacsclient exited unsuccessfully"
+                self.toast(f"Could not open in Emacs: {detail}")
+
+        process.communicate_utf8_async(None, None, finished)
+
     def save(self, then=None, on_cancel=None):
         if self.file is None:
             self.save_as(then=then, on_cancel=on_cancel)
@@ -1297,6 +1341,10 @@ class EditorWindow(Adw.ApplicationWindow):
             if tab._on_escape_sequence(keyval, state):
                 return True
         modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if (isinstance(tab, EditorTab) and keyval == Gdk.KEY_e
+                and modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK)):
+            tab.open_in_emacs()
+            return True
         if modifiers == Gdk.ModifierType.ALT_MASK:
             if (isinstance(tab, EditorTab) and self.get_focus() is tab.view
                     and keyval in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right)):
@@ -1534,6 +1582,7 @@ class GnorgApplication(Adw.Application):
         self.set_accels_for_action("win.open", ["<Ctrl>o"])
         self.set_accels_for_action("win.save", ["<Ctrl>s"])
         self.set_accels_for_action("win.save-as", ["<Ctrl><Shift>s"])
+        self.set_accels_for_action("win.open-in-emacs", ["<Ctrl><Alt>e"])
         self.set_accels_for_action("win.close", ["<Ctrl>w"])
         self.set_accels_for_action("app.preferences", ["<Ctrl>comma"])
 
