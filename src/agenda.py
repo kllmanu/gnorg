@@ -166,10 +166,9 @@ class AgendaView(Adw.Bin):
             .organizer-agenda > row { padding: 0; }
             .organizer-agenda button { padding: 0; min-height: 0; font-weight: normal; }
             .organizer-agenda button.agenda-cursor {
-                background: alpha(@accent_bg_color, 0.18);
-                box-shadow: inset 3px 0 @accent_bg_color; }
+                background: alpha(@accent_bg_color, 0.18); }
             .organizer-agenda row.agenda-today {
-                background: alpha(@accent_bg_color, 0.12); }
+                background: alpha(@view_fg_color, 0.06); }
         """ + "\n".join(
             f".calendar-event.file-color-{index} {{ "
             f"background: alpha({color}, 0.18); border-left-color: {color}; }} "
