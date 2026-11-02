@@ -98,8 +98,6 @@ class AgendaView(Adw.Bin):
         self.open_button.set_child(open_content)
         self.open_button.connect("clicked", lambda *_: self.app.show_buffers())
         self.header.pack_start(self.open_button)
-        self.header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                          tooltip_text="New Document", action_name="win.new"))
         menu = Gio.Menu()
         menu.append("Preferences", "app.preferences")
         menu.append(f"About {GLib.get_application_name()}", "app.about")

@@ -51,8 +51,15 @@ class UtilityPane(Adw.Bin):
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.append(self.calendar)
         content.append(Gtk.Separator())
-        content.append(Gtk.Label(label="Files", xalign=0, css_classes=["heading"],
-                                 margin_start=18, margin_top=18, margin_bottom=6))
+        files_heading = Gtk.Box(spacing=6, margin_start=18, margin_end=12,
+                                margin_top=18, margin_bottom=6)
+        files_heading.append(Gtk.Label(label="Files", xalign=0, hexpand=True,
+                                       css_classes=["heading"]))
+        self.new_file_button = Gtk.Button(
+            icon_name="list-add-symbolic", tooltip_text="New Document", css_classes=["flat"])
+        self.new_file_button.connect("clicked", self._on_new_file)
+        files_heading.append(self.new_file_button)
+        content.append(files_heading)
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
                                    css_classes=["navigation-sidebar", "utility-files"])
         css = Gtk.CssProvider()
@@ -252,6 +259,11 @@ class UtilityPane(Adw.Bin):
             row.document.present()
         else:
             self.app.open_file(row.file)
+        if self.window.split_view.get_collapsed():
+            self.window.split_view.set_show_sidebar(False)
+
+    def _on_new_file(self, *_):
+        self.window.new_tab().present()
         if self.window.split_view.get_collapsed():
             self.window.split_view.set_show_sidebar(False)
 

@@ -151,8 +151,6 @@ class EditorTab(Adw.Bin):
         self.open_button.set_child(open_content)
         self.open_button.connect("clicked", lambda *_: self.get_application().show_buffers())
         header.pack_start(self.open_button)
-        header.pack_start(Gtk.Button(icon_name="tab-new-symbolic",
-                                     tooltip_text="New Document", action_name="win.new"))
 
         menu = Gio.Menu()
         file_section = Gio.Menu()
@@ -797,7 +795,7 @@ class EditorWindow(Adw.ApplicationWindow):
                 current = next(i for i in range(pages.get_n_items())
                                if pages.get_item(i).get_child() is self.stack.get_visible_child())
                 direction = -1 if keyval == Gdk.KEY_h else 1
-                page = pages.get_item((current + direction) % pages.get_n_items())
+                page = pages.get_item(max(0, min(current + direction, pages.get_n_items() - 1)))
                 self.stack.set_visible_child(page.get_child())
                 return True
         tab = self.active_view

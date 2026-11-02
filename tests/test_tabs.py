@@ -85,6 +85,23 @@ class TabTests(unittest.TestCase):
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(second, window.documents())
 
+    def test_utility_pane_new_file_button_is_beside_heading_and_opens_editor(self):
+        tab = self.app.new_tab()
+        window = tab.window
+        pane = window.utility_pane
+        self.assertEqual(pane.new_file_button.get_prev_sibling().get_label(), "Files")
+        for show in (self.app.show_agenda, self.app.show_weekly_agenda):
+            show(window)
+            count = len(window.documents())
+            pane.new_file_button.emit("clicked")
+            self.assertEqual(len(window.documents()), count + 1)
+            self.assertEqual(window.stack.get_visible_child_name(), "files")
+            self.assertTrue(window.active_tab.is_pristine)
+        window.split_view.set_collapsed(True)
+        window.split_view.set_show_sidebar(True)
+        pane.new_file_button.emit("clicked")
+        self.assertFalse(window.split_view.get_show_sidebar())
+
     def test_utility_pane_appends_new_files_and_keeps_saved_drafts_in_place(self):
         with tempfile.TemporaryDirectory() as directory:
             def create(name):
@@ -412,7 +429,7 @@ class TabTests(unittest.TestCase):
         self.assertTrue(app.agenda_file_visible("/org/visible.org"))
         self.assertEqual(app.utility_file_order, ["file:///org/b.org", "file:///org/a.org"])
 
-    def test_alt_navigation_cycles_views_without_switching_documents(self):
+    def test_alt_navigation_stops_at_edges_without_switching_documents(self):
         first = self.app.new_tab()
         second = self.app.new_tab()
         window = first.window
@@ -422,8 +439,9 @@ class TabTests(unittest.TestCase):
             return window._on_key_pressed(None, key, 0, modifiers)
 
         for key, expected_views in (
-                (Gdk.KEY_l, ("weekly-agenda", "agenda", "files")),
-                (Gdk.KEY_h, ("agenda", "weekly-agenda", "files"))):
+                (Gdk.KEY_h, ("files", "files")),
+                (Gdk.KEY_l, ("weekly-agenda", "agenda", "agenda", "agenda")),
+                (Gdk.KEY_h, ("weekly-agenda", "files", "files", "files"))):
             for expected in expected_views:
                 self.assertTrue(press(key))
                 self.assertEqual(window.stack.get_visible_child_name(), expected)
@@ -436,9 +454,13 @@ class TabTests(unittest.TestCase):
                 key, Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.CONTROL_MASK))
         self.assertEqual(window.stack.get_visible_child_name(), "files")
 
-    def test_alt_navigation_cycles_views_with_single_document(self):
+    def test_alt_navigation_stops_at_edges_with_single_document(self):
         tab = self.app.new_tab()
-        for key, expected in ((Gdk.KEY_h, "agenda"), (Gdk.KEY_l, "files")):
+        for key, expected in (
+                (Gdk.KEY_h, "files"), (Gdk.KEY_l, "weekly-agenda"),
+                (Gdk.KEY_l, "agenda"), (Gdk.KEY_l, "agenda"),
+                (Gdk.KEY_h, "weekly-agenda"), (Gdk.KEY_h, "files"),
+                (Gdk.KEY_h, "files")):
             self.assertTrue(tab.window._on_key_pressed(None, key, 0, Gdk.ModifierType.ALT_MASK))
             self.assertEqual(tab.window.stack.get_visible_child_name(), expected)
             self.assertIs(tab.window.active_tab, tab)
