@@ -79,6 +79,69 @@ def new_item_prefix(line):
     return indent + bullet + " " + checkbox
 
 CHECKBOX_RE = re.compile(r"^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ Xx-])(\])")
+PROGRESS_RE = re.compile(r"\[(?:\d*/\d*|\d*%)\]")
+LIST_ITEM_RE = re.compile(r"^([ \t]*)(?:[-+*]|\d+[.)])[ \t]+")
+
+
+def progress_updates(lines):
+    """Return cookie replacements based on direct TODO children or checklist items."""
+    headings = []
+    items = {}
+    excluded = set()
+    in_block = in_drawer = False
+    for i, line in enumerate(lines):
+        if in_block or in_drawer:
+            excluded.add(i)
+            if in_block:
+                in_block = not BLOCK_END_RE.match(line)
+            else:
+                in_drawer = not DRAWER_END_RE.match(line)
+            continue
+        if BLOCK_START_RE.match(line) or DRAWER_START_RE.match(line):
+            excluded.add(i)
+            in_block = bool(BLOCK_START_RE.match(line))
+            in_drawer = not in_block
+            continue
+        if heading := parse_heading(line):
+            headings.append((i, heading))
+        elif item := LIST_ITEM_RE.match(line):
+            items[i] = len(item[1].expandtabs(8))
+    updates = []
+    for i, line in enumerate(lines):
+        if i in excluded or not PROGRESS_RE.search(line):
+            continue
+        heading = next((h for index, h in headings if index == i), None)
+        states = []
+        if heading:
+            end = next((index for index, h in headings
+                        if index > i and h[0] <= heading[0]), len(lines))
+            children = [(index, h) for index, h in headings if i < index < end]
+            depth = min((h[0] for _, h in children), default=None)
+            states = [h[1] in DONE_KEYWORDS for _, h in children
+                      if h[0] == depth and h[1] in ALL_KEYWORDS]
+            checklist_end = children[0][0] if children else end
+            candidates = [index for index in items if i < index < checklist_end]
+        elif i in items:
+            end = next((index for index in range(i + 1, len(lines))
+                        if any(hline == index for hline, _ in headings)
+                        or (index in items and items[index] <= items[i])), len(lines))
+            candidates = [index for index in items if i < index < end]
+        else:
+            continue
+        if not states:
+            depth = min((items[index] for index in candidates), default=None)
+            states = [match[2] in ("X", "x") for index in candidates
+                      if items[index] == depth and (match := CHECKBOX_RE.match(lines[index]))]
+        done, total = sum(states), len(states)
+
+        def cookie(match):
+            return (f"[{done * 100 // total if total else 0}%]" if "%" in match[0]
+                    else f"[{done}/{total}]")
+
+        updated = PROGRESS_RE.sub(cookie, line)
+        if updated != line:
+            updates.append((i, updated))
+    return updates
 
 
 def toggle_checkbox(line):

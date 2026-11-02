@@ -137,6 +137,17 @@ class EditorTab(Adw.Bin):
         self.buffer.connect("modified-changed", lambda *_: self._update_title())
         self.buffer.connect("notify::cursor-position", lambda *_: self._update_position())
         self.buffer.connect("changed", lambda *_: app.queue_agenda_refresh())
+        self._progress_idle = 0
+        self._updating_progress = False
+        self._progress_undo = False
+        self._progress_done_tag = self.buffer.create_tag("org-progress-done")
+        self.buffer.connect("notify::style-scheme", self._queue_progress)
+        self.buffer.connect("changed", self._queue_progress)
+        self.buffer.connect("end-user-action", self._update_progress)
+        for signal in ("undo", "redo"):
+            self.buffer.connect(signal, self._before_progress_undo)
+            self.buffer.connect_after(signal, self._after_progress_undo)
+        self.connect("destroy", self._cancel_progress)
         self._update_title()
         self._update_position()
 
@@ -393,6 +404,61 @@ class EditorTab(Adw.Bin):
         GLib.idle_add(lambda: self.view.scroll_to_mark(self.buffer.get_insert(), 0.1, True, 0, 0.3) and False)
 
     # ---------- Org commands ----------
+
+    def _cancel_progress(self, *_):
+        if self._progress_idle:
+            GLib.source_remove(self._progress_idle)
+            self._progress_idle = 0
+
+    def _before_progress_undo(self, *_):
+        self._progress_undo = True
+        self._cancel_progress()
+
+    def _after_progress_undo(self, *_):
+        self._progress_undo = False
+        self._highlight_progress()
+
+    def _queue_progress(self, *_):
+        if not self._updating_progress and not self._progress_undo and not self._progress_idle:
+            self._progress_idle = GLib.idle_add(self._update_progress)
+
+    def _update_progress(self, *_):
+        self._cancel_progress()
+        if self._updating_progress or self._progress_undo:
+            return GLib.SOURCE_REMOVE
+        updates = org.progress_updates(self.get_text().split("\n"))
+        if updates:
+            self._updating_progress = True
+            self.buffer.begin_user_action()
+            for line, text in reversed(updates):
+                self.apply_edit((line, line + 1, [text]))
+            self.buffer.end_user_action()
+            self._updating_progress = False
+        self._highlight_progress()
+        return GLib.SOURCE_REMOVE
+
+    def _highlight_progress(self):
+        buf = self.buffer
+        buf.remove_tag(self._progress_done_tag, *buf.get_bounds())
+        scheme = buf.get_style_scheme()
+        style = scheme.get_style("org:done") if scheme else None
+        if style is None:
+            return
+        self._progress_done_tag.props.foreground = style.props.foreground
+        self._progress_done_tag.props.weight = Pango.Weight.BOLD
+        self._progress_done_tag.set_priority(buf.get_tag_table().get_size() - 1)
+        for match in org.PROGRESS_RE.finditer(self.get_text()):
+            value = match[0][1:-1]
+            complete = value == "100%"
+            if "/" in value:
+                done, total = value.split("/")
+                complete = bool(done and total and int(total) > 0 and int(done) == int(total))
+            if complete:
+                start = buf.get_iter_at_offset(match.start())
+                if not any(buf.iter_has_context_class(start, name)
+                           for name in ("comment", "no-spell-check")):
+                    buf.apply_tag(self._progress_done_tag, start,
+                                  buf.get_iter_at_offset(match.end()))
 
     def confirm_org_item(self):
         line = self._cursor_line()
@@ -1024,6 +1090,7 @@ class EditorTab(Adw.Bin):
 
     def save_to(self, file, then=None, on_cancel=None):
         self._flush_escape_prefix()
+        self._update_progress()
         if self.file is None or not self.file.equal(file):
             parent = file.get_parent()
             if parent:

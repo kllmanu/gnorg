@@ -51,6 +51,9 @@
     <context id="priority" style-ref="priority">
       <match>\[#[A-Z0-9]\]</match>
     </context>
+    <context id="progress-cookie" style-ref="checkbox">
+      <match>\[(?:\d*/\d*|\d*%)\]</match>
+    </context>
     <context id="tags" style-ref="tag">
       <match>(?&lt;=\s):[\w@#%:]+:(?=\s*$)</match>
     </context>
@@ -77,6 +80,7 @@
 
     <context id="inline">
       <include>
+        <context ref="progress-cookie"/>
         <context ref="timestamp"/>
         <context ref="timestamp-inactive"/>
         <context ref="link"/>
@@ -90,6 +94,7 @@
 
     <context id="heading-inline">
       <include>
+        <context ref="progress-cookie"/>
         <context ref="priority"/>
         <context ref="tags"/>
         <context ref="timestamp"/>
