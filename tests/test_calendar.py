@@ -4,9 +4,30 @@ from unittest.mock import patch
 
 from editor_test_case import EditorTestCase
 from agenda import event_lanes, event_minutes
+from vim import Gdk
 
 
 class CalendarTests(EditorTestCase):
+    def test_period_in_current_calendar_week_does_not_refresh_or_change_selection(self):
+        import datetime as dt
+        import org
+
+        tab = self.app.new_tab()
+        self.app.show_agenda(tab.window)
+        calendar = tab.window.agenda
+        calendar.start = org.week_start(dt.date.today())
+        with patch.object(calendar, "refresh") as refresh, patch.object(
+                tab.window.utility_pane, "select_week") as select_week:
+            self.assertTrue(calendar._on_key_pressed(
+                None, Gdk.KEY_period, 0, Gdk.ModifierType(0)))
+            refresh.assert_not_called()
+            select_week.assert_not_called()
+            calendar.start -= dt.timedelta(days=7)
+            calendar._on_key_pressed(None, Gdk.KEY_period, 0, Gdk.ModifierType(0))
+            self.assertEqual(calendar.start, org.week_start(dt.date.today()))
+            refresh.assert_called_once_with()
+            select_week.assert_called_once_with(calendar.start)
+
     def test_calendar_event_duration_and_overlap_lanes(self):
         import datetime as dt
         import org

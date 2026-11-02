@@ -540,7 +540,10 @@ class AgendaView(Adw.Bin):
         self.refresh()
 
     def goto_today(self):
-        self.start = org.week_start(dt.date.today())
+        start = org.week_start(dt.date.today())
+        if not self.weekly and self.start == start:
+            return
+        self.start = start
         self.window.utility_pane.select_week(self.start)
         self.refresh()
 
