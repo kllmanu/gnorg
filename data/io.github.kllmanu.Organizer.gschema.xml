@@ -51,6 +51,11 @@
       <summary>Files hidden from Calendar and Agenda</summary>
       <description>Canonical file URIs unchecked in the utility pane. Hidden files remain available in the editor, and visibility choices persist across sessions.</description>
     </key>
+    <key name="utility-file-order" type="as">
+      <default>[]</default>
+      <summary>Utility pane file order</summary>
+      <description>Canonical file URIs in display order. Drag file rows above or below one another to reorder them. The order is shared across windows and restored between sessions; new files are appended. Unsaved drafts keep their position during the session but are not stored.</description>
+    </key>
     <key name="hide-weekends" type="b">
       <default>true</default>
       <summary>Hide weekends</summary>

@@ -25,6 +25,8 @@ class TabTests(unittest.TestCase):
     def setUp(self):
         self.app.recent_files = []
         self.app.hidden_agenda_files = set()
+        self.app.utility_file_order = []
+        self.app._saved_utility_file_order = []
         self.addCleanup(self.cleanup_windows)
 
     def cleanup_windows(self):
@@ -81,6 +83,101 @@ class TabTests(unittest.TestCase):
         self.assertEqual(window.stack.get_visible_child_name(), "files")
         self.assertEqual(first.get_text(), "* First")
         self.assertIn(second, window.documents())
+
+    def test_utility_pane_appends_new_files_and_keeps_saved_drafts_in_place(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def create(name):
+                path = os.path.join(directory, name)
+                with open(path, "w") as stream:
+                    stream.write("* Event\n")
+                return path
+
+            existing = create("z-existing.org")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                pane = tab.window.utility_pane
+                pane.refresh()
+                added = create("a-new.org")
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows], [existing, added])
+                tab.buffer.set_text("* Draft")
+                pane.refresh()
+                self.assertIs(pane.rows[-1].document, tab)
+                saved = create("0-saved.org")
+                tab._set_file(Gio.File.new_for_path(saved), "* Draft")
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows],
+                                 [existing, added, saved])
+                self.assertIs(pane.rows[-1].document, tab)
+                self.app.set_agenda_file_visible(existing, False)
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows],
+                                 [existing, added, saved])
+                os.unlink(added)
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows], [existing, saved])
+                create("a-new.org")
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows],
+                                 [existing, saved, added])
+
+    def test_utility_drag_reorders_rows_and_persists_file_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [os.path.join(directory, name + ".org") for name in ("a", "b", "c")]
+            for path in paths:
+                with open(path, "w") as stream:
+                    stream.write("* Event\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                tab.present()
+                pane = tab.window.utility_pane
+                self.wait_for(pane.get_mapped)
+                pane.refresh()
+                first, second, third = pane.rows
+                self.wait_for(lambda: first.get_height() > 0)
+                controllers = third.observe_controllers()
+                drag = next(controllers.get_item(i) for i in range(controllers.get_n_items())
+                            if isinstance(controllers.get_item(i), Gtk.DragSource))
+                targets = first.observe_controllers()
+                drop = next(targets.get_item(i) for i in range(targets.get_n_items())
+                            if isinstance(targets.get_item(i), Gtk.DropTarget))
+                provider = drag.emit("prepare", 8.0, 8.0)
+                self.assertIsInstance(provider, Gdk.ContentProvider)
+                self.assertTrue(pane._dragging)
+                drop.emit("motion", 0.0, 0.0)
+                self.assertTrue(first.has_css_class("drop-before"))
+                settings = Mock()
+                with patch.object(self.app, "settings", settings):
+                    self.assertTrue(drop.emit("drop", third, 0.0, 0.0))
+                    settings.set_strv.assert_called_once_with(
+                        "utility-file-order",
+                        [Gio.File.new_for_path(paths[i]).get_uri() for i in (2, 0, 1)])
+                pane._on_drag_end()
+                self.assertEqual([row.file.get_path() for row in pane.rows],
+                                 [paths[2], paths[0], paths[1]])
+                first, second, third = pane.rows
+                self.assertTrue(pane._on_drop(None, first, 0, third.get_height(), third))
+                pane.refresh()
+                self.assertEqual([row.file.get_path() for row in pane.rows], paths)
+                self.assertFalse(pane._on_drop(None, Adw.PreferencesRow(), 0, 0, pane.rows[0]))
+                self.assertIs(tab.window.active_tab, tab)
+                self.assertTrue(all(row.visibility.get_active() for row in pane.rows))
+
+    def test_utility_file_order_is_restored_and_shared_across_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [os.path.join(directory, name + ".org") for name in ("a", "b")]
+            for path in paths:
+                with open(path, "w") as stream:
+                    stream.write("* Event\n")
+            self.app.utility_file_order = [Gio.File.new_for_path(path).get_uri()
+                                          for path in reversed(paths)]
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                first = self.app.new_tab().window.utility_pane
+                second = self.app.new_window().new_tab().window.utility_pane
+                self.assertEqual([row.file.get_path() for row in first.rows], paths[::-1])
+                self.assertEqual([row.file.get_path() for row in second.rows], paths[::-1])
+                self.assertTrue(first._on_drop(None, first.rows[1], 0, -1, first.rows[0]))
+                self.wait_for(lambda: [row.file.get_path() for row in second.rows] == paths)
 
     def test_utility_sources_toggle_both_views_without_closing_or_modifying_files(self):
         import datetime as dt
@@ -302,6 +399,7 @@ class TabTests(unittest.TestCase):
         schema = source.lookup("io.github.kllmanu.Organizer", False)
         settings = Gio.Settings.new_full(schema, Gio.memory_settings_backend_new(), None)
         settings.set_strv("hidden-agenda-files", ["file:///org/hidden.org"])
+        settings.set_strv("utility-file-order", ["file:///org/b.org", "file:///org/a.org"])
         with (patch.object(OrganizerApplication, "_load_settings", return_value=settings),
               patch("vim.data_path", return_value=None)):
             app = OrganizerApplication()
@@ -311,6 +409,7 @@ class TabTests(unittest.TestCase):
         self.addCleanup(app.quit)
         self.assertFalse(app.agenda_file_visible("/org/hidden.org"))
         self.assertTrue(app.agenda_file_visible("/org/visible.org"))
+        self.assertEqual(app.utility_file_order, ["file:///org/b.org", "file:///org/a.org"])
 
     def test_alt_navigation_cycles_views_without_switching_documents(self):
         first = self.app.new_tab()

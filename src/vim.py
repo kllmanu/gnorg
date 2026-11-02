@@ -932,9 +932,14 @@ class OrganizerApplication(Adw.Application):
         self._session_restored = False
         self.recent_files = []
         self.hidden_agenda_files = set()
+        self.utility_file_order = []
+        self._saved_utility_file_order = []
         self.connect("window-removed", self._on_window_removed)
 
     def _on_window_removed(self, _app, window):
+        self.utility_file_order = [
+            key for key in self.utility_file_order
+            if isinstance(key, str) or key.window is not window]
         if self.agenda is not None and self.agenda.window is window:
             self.agenda = None
 
@@ -949,6 +954,8 @@ class OrganizerApplication(Adw.Application):
             self.hide_weekends = self.settings.get_boolean("hide-weekends")
             self.recent_files = self.settings.get_strv("recent-files")
             self.hidden_agenda_files = set(self.settings.get_strv("hidden-agenda-files"))
+            self.utility_file_order = self.settings.get_strv("utility-file-order")
+            self._saved_utility_file_order = list(self.utility_file_order)
 
         language_specs = data_path("language-specs")
         if language_specs:
@@ -1102,6 +1109,14 @@ class OrganizerApplication(Adw.Application):
 
     def agenda_file_visible(self, path):
         return Gio.File.new_for_path(os.path.realpath(path)).get_uri() not in self.hidden_agenda_files
+
+    def save_utility_file_order(self):
+        uris = [key for key in self.utility_file_order if isinstance(key, str)]
+        if uris != self._saved_utility_file_order:
+            if self.settings:
+                self.settings.set_strv("utility-file-order", uris)
+            self._saved_utility_file_order = uris
+
 
     def set_agenda_file_visible(self, path, visible):
         uri = Gio.File.new_for_path(os.path.realpath(path)).get_uri()

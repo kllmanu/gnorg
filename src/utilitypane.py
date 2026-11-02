@@ -26,6 +26,13 @@ def file_color(path):
     return FILE_COLORS[file_color_index(path)]
 
 
+def file_order_key(file, document):
+    if file:
+        path = file.get_path()
+        return Gio.File.new_for_path(os.path.realpath(path)).get_uri() if path else file.get_uri()
+    return document
+
+
 class UtilityPane(Adw.Bin):
     def __init__(self, window):
         super().__init__()
@@ -34,6 +41,7 @@ class UtilityPane(Adw.Bin):
         self._syncing = False
         self._signature = None
         self.rows = []
+        self._dragging = False
 
         self.calendar = Gtk.Calendar(show_week_numbers=True, margin_top=12,
                                      margin_bottom=12, margin_start=12, margin_end=12)
@@ -49,6 +57,8 @@ class UtilityPane(Adw.Bin):
                                    css_classes=["navigation-sidebar", "utility-files"])
         css = Gtk.CssProvider()
         css.load_from_string("""
+            .utility-files row.drop-before { box-shadow: inset 0 2px @accent_color; }
+            .utility-files row.drop-after { box-shadow: inset 0 -2px @accent_color; }
             .utility-file-visibility {
                 min-height: 0;
                 min-width: 0;
@@ -86,6 +96,8 @@ class UtilityPane(Adw.Bin):
         self.set_child(toolbar)
 
     def refresh(self):
+        if self._dragging:
+            return
         sources = self.app.agenda_files()
         documents = self.window.documents()
         items = []
@@ -100,6 +112,31 @@ class UtilityPane(Adw.Bin):
             if tab.path and os.path.realpath(tab.path) in seen:
                 continue
             items.append((tab.file, tab, False))
+        document_positions = {row.document: index for index, row in enumerate(self.rows)
+                              if row.document is not None}
+        file_positions = {row.file.get_uri(): index for index, row in enumerate(self.rows)
+                          if row.file is not None}
+        items.sort(key=lambda item: document_positions.get(
+            item[1], file_positions.get(item[0].get_uri(), len(self.rows))
+            if item[0] else len(self.rows)))
+        order = self.app.utility_file_order
+        keys = [file_order_key(file, tab) for file, tab, _source in items]
+        for file, tab, _source in items:
+            key = file_order_key(file, tab)
+            if file and tab in order:
+                index = order.index(tab)
+                order.remove(tab)
+                if key not in order:
+                    order.insert(index, key)
+        for row in self.rows:
+            key = file_order_key(row.file, row.document)
+            if key not in keys and key in order:
+                order.remove(key)
+        for key in keys:
+            if key not in order:
+                order.append(key)
+        positions = {key: index for index, key in enumerate(order)}
+        items.sort(key=lambda item: positions[file_order_key(item[0], item[1])])
         signature = tuple(
             (file.get_uri() if file else None, tab, source,
              tab.buffer.get_modified() if tab else False,
@@ -135,6 +172,16 @@ class UtilityPane(Adw.Bin):
                 row.file = file
                 row.visibility = None
                 row.set_tooltip_text(path or "Untitled")
+                drag = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+                drag.connect("prepare", self._on_drag_prepare, row)
+                drag.connect("drag-end", self._on_drag_end)
+                row.add_controller(drag)
+                drop = Gtk.DropTarget.new(Adw.PreferencesRow, Gdk.DragAction.MOVE)
+                drop.connect("motion", self._on_drop_motion, row)
+                drop.connect("leave", lambda _target, target_row=row:
+                             self._clear_drop_indicator(target_row))
+                drop.connect("drop", self._on_drop, row)
+                row.add_controller(drop)
                 if source:
                     check = Gtk.CheckButton(
                         active=self.app.agenda_file_visible(path),
@@ -150,7 +197,49 @@ class UtilityPane(Adw.Bin):
                 if focused == (file.get_uri() if file else None, tab) and row.visibility:
                     row.visibility.grab_focus()
             self.empty.set_visible(not items)
+        self.app.save_utility_file_order()
         self.update_marks()
+
+    def _on_drag_prepare(self, source, x, y, row):
+        picked = row.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if row.visibility and (picked is row.visibility
+                               or picked and picked.is_ancestor(row.visibility)):
+            return None
+        self._dragging = True
+        source.set_icon(Gtk.WidgetPaintable.new(row), int(x), int(y))
+        return Gdk.ContentProvider.new_for_value(row)
+
+    def _on_drag_end(self, *_):
+        self._dragging = False
+        for row in self.rows:
+            self._clear_drop_indicator(row)
+        self.refresh()
+
+    @staticmethod
+    def _clear_drop_indicator(row):
+        row.remove_css_class("drop-before")
+        row.remove_css_class("drop-after")
+
+    def _on_drop_motion(self, _target, _x, y, row):
+        self._clear_drop_indicator(row)
+        row.add_css_class("drop-before" if y < row.get_height() / 2 else "drop-after")
+        return Gdk.DragAction.MOVE
+
+    def _on_drop(self, _target, source_row, _x, y, target_row):
+        self._clear_drop_indicator(target_row)
+        if source_row not in self.rows or target_row not in self.rows:
+            return False
+        if source_row is target_row:
+            return True
+        order = self.app.utility_file_order
+        source = file_order_key(source_row.file, source_row.document)
+        target = file_order_key(target_row.file, target_row.document)
+        order.remove(source)
+        index = order.index(target) + (y >= target_row.get_height() / 2)
+        order.insert(index, source)
+        self.app.save_utility_file_order()
+        self.app.queue_agenda_refresh()
+        return True
 
     @staticmethod
     def _draw_dot(_area, cr, width, height, color):
