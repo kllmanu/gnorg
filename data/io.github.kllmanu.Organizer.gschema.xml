@@ -44,7 +44,7 @@
     <key name="agenda-directory" type="s">
       <default>'~/org'</default>
       <summary>Calendar folder</summary>
-      <description>Folder whose .org files (including subfolders), together with open Org documents, are listed below the utility pane calendar. Click a file to edit it; check it to include its entries in Calendar and Agenda. Calendar excludes scheduled entries and deadlines; Agenda includes them without a global TODO list. A leading ~ is expanded to the home folder.</description>
+      <description>Folder whose .org files (including subfolders), together with open Org documents, are listed below the utility pane calendar. Each file has a stable color dot matching its calendar events. Click a file to edit it; use the checkmark on the right to include its entries in Calendar and Agenda. Calendar excludes scheduled entries and deadlines; Agenda includes them without a global TODO list. A leading ~ is expanded to the home folder.</description>
     </key>
     <key name="hidden-agenda-files" type="as">
       <default>[]</default>

@@ -1,15 +1,29 @@
 """Calendar navigation and document sources shared by all workspace views."""
 
 import datetime as dt
+import hashlib
+import math
 import os
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 import org  # noqa: E402
+
+FILE_COLORS = ("#62a0ea", "#f6d32d", "#8ff0a4", "#ffbe6f",
+               "#c061cb", "#f66151", "#99c1f1", "#f5a9b8")
+
+
+def file_color_index(path):
+    digest = hashlib.sha256(os.path.realpath(path).encode("utf-8")).digest()
+    return int.from_bytes(digest[:4]) % len(FILE_COLORS)
+
+
+def file_color(path):
+    return FILE_COLORS[file_color_index(path)]
 
 
 class UtilityPane(Adw.Bin):
@@ -31,12 +45,31 @@ class UtilityPane(Adw.Bin):
         content.append(Gtk.Separator())
         content.append(Gtk.Label(label="Files", xalign=0, css_classes=["heading"],
                                  margin_start=18, margin_top=18, margin_bottom=6))
-        content.append(Gtk.Label(
-            label="Check to show in Calendar and Agenda",
-            xalign=0, wrap=True, css_classes=["caption", "dim-label"],
-            margin_start=18, margin_end=18, margin_bottom=12))
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
-                                   css_classes=["navigation-sidebar"])
+                                   css_classes=["navigation-sidebar", "utility-files"])
+        css = Gtk.CssProvider()
+        css.load_from_string("""
+            .utility-file-visibility {
+                min-height: 0;
+                min-width: 0;
+                padding: 0;
+            }
+            .utility-file-visibility check {
+                min-width: 16px;
+                min-height: 16px;
+                -gtk-icon-size: 16px;
+                padding: 0;
+                background: none;
+                border: none;
+                box-shadow: none;
+                color: inherit;
+            }
+            .utility-file-visibility check:checked {
+                -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+            }
+        """)
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.listbox.connect("row-activated", self._on_file_activated)
         content.append(self.listbox)
         self.empty = Gtk.Label(
@@ -80,47 +113,50 @@ class UtilityPane(Adw.Bin):
                  if row.visibility and row.visibility.is_focus()), None)
             self.listbox.remove_all()
             self.rows = []
-            directory = self.app.agenda_directory()
             for file, tab, source in items:
                 name = file.get_basename() if file else "Untitled"
                 if tab and tab.buffer.get_modified():
                     name = "• " + name
                 path = file.get_path() if file else None
-                subtitle = ""
-                if path:
-                    subtitle = (os.path.dirname(os.path.relpath(path, directory)) if
-                                os.path.commonpath((directory, path)) == directory
-                                else os.path.dirname(path))
-                row = Adw.ActionRow(title=name, subtitle=subtitle, use_markup=False,
-                                    title_lines=1, subtitle_lines=1, activatable=True)
+                row = Adw.PreferencesRow(title=name, use_markup=False, activatable=True)
+                content = Gtk.Box(spacing=12, margin_start=6, margin_end=6)
+                dot = Gtk.DrawingArea(width_request=16, height_request=16,
+                                      valign=Gtk.Align.CENTER,
+                                      accessible_role=Gtk.AccessibleRole.PRESENTATION)
+                color = Gdk.RGBA()
+                color.parse(file_color(path) if path else "#9a9996")
+                dot.set_draw_func(self._draw_dot, color)
+                row.color_dot = dot
+                content.append(dot)
+                content.append(Gtk.Label(
+                    label=name, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END))
+                row.set_child(content)
                 row.document = tab
                 row.file = file
                 row.visibility = None
                 row.set_tooltip_text(path or "Untitled")
-                if tab is not None and tab is self.window.active_tab:
-                    row.add_css_class("accent")
                 if source:
                     check = Gtk.CheckButton(
                         active=self.app.agenda_file_visible(path),
                         tooltip_text=f"Show {file.get_basename()} in Calendar and Agenda",
-                        valign=Gtk.Align.CENTER)
+                        valign=Gtk.Align.CENTER, css_classes=["utility-file-visibility"])
                     check.connect("toggled", lambda button, source_path=path:
                                   self.app.set_agenda_file_visible(
                                       source_path, button.get_active()))
-                    row.add_prefix(check)
+                    content.append(check)
                     row.visibility = check
-                if tab:
-                    close = Gtk.Button(icon_name="window-close-symbolic",
-                                       tooltip_text="Close document", css_classes=["flat"],
-                                       valign=Gtk.Align.CENTER)
-                    close.connect("clicked", lambda _button, document=tab: document.close())
-                    row.add_suffix(close)
                 self.listbox.append(row)
                 self.rows.append(row)
                 if focused == (file.get_uri() if file else None, tab) and row.visibility:
                     row.visibility.grab_focus()
             self.empty.set_visible(not items)
         self.update_marks()
+
+    @staticmethod
+    def _draw_dot(_area, cr, width, height, color):
+        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+        cr.arc(width / 2, height / 2, min(width, height) / 2, 0, math.tau)
+        cr.fill()
 
     def _on_file_activated(self, _listbox, row):
         if row.document:

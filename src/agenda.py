@@ -14,6 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, GtkSource, Pango  # noqa: E4
 import org  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
+from utilitypane import FILE_COLORS, file_color_index  # noqa: E402
 
 
 def show_zoom_toast(view, zoom):
@@ -171,7 +172,11 @@ class AgendaView(Adw.Bin):
                 box-shadow: inset 3px 0 @accent_bg_color; }
             .organizer-agenda row.agenda-today {
                 background: alpha(@accent_bg_color, 0.12); }
-        """)
+        """ + "\n".join(
+            f".calendar-event.file-color-{index} {{ "
+            f"background: alpha({color}, 0.18); border-left-color: {color}; }} "
+            f".calendar-event.file-color-{index}:hover {{ background: alpha({color}, 0.28); }}"
+            for index, color in enumerate(FILE_COLORS)))
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -414,6 +419,8 @@ class AgendaView(Adw.Bin):
         button = Gtk.Button(tooltip_text=f"{title}\n{entry.path}",
                             css_classes=["calendar-event", "deadline"] if "deadline" in item.kind
                             else ["calendar-event"])
+        if "deadline" not in item.kind:
+            button.add_css_class(f"file-color-{file_color_index(entry.path)}")
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1,
                           valign=Gtk.Align.START)
         detail = item.label or "Event"

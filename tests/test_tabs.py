@@ -107,6 +107,27 @@ class TabTests(unittest.TestCase):
                 self.assertEqual(len(window.weekly_agenda.entry_buttons), 1)
                 pane.refresh()
                 row = next(row for row in pane.rows if row.document is document)
+                self.assertEqual(row.get_tooltip_text(), path)
+                self.assertFalse(row.has_css_class("accent"))
+                self.assertTrue(row.visibility.has_css_class("utility-file-visibility"))
+                self.assertTrue(Gtk.IconTheme.get_for_display(
+                    Gdk.Display.get_default()).has_icon("object-select-symbolic"))
+                self.assertIsNone(row.visibility.get_next_sibling())
+                self.assertIsInstance(row.visibility.get_prev_sibling(), Gtk.Label)
+                self.assertIs(row.get_child().get_first_child(), row.color_dot)
+                self.assertEqual(row.get_child().get_spacing(), 12)
+                self.assertEqual(row.color_dot.get_size_request(), (16, 16))
+                reference = Gtk.ListBoxRow()
+                reference_content = Gtk.Box(spacing=12, margin_start=6, margin_end=6)
+                reference_content.append(Gtk.DrawingArea(width_request=16, height_request=16))
+                reference_content.append(Gtk.Label(label="Calendar", hexpand=True))
+                reference_content.append(Gtk.Image(icon_name="object-select-symbolic"))
+                reference.set_child(reference_content)
+                pane.listbox.append(reference)
+                self.assertEqual(
+                    row.measure(Gtk.Orientation.VERTICAL, -1)[1],
+                    reference.measure(Gtk.Orientation.VERTICAL, -1)[1])
+                pane.listbox.remove(reference)
                 settings = Mock()
                 with patch.object(self.app, "settings", settings):
                     row.visibility.set_active(False)
@@ -122,6 +143,26 @@ class TabTests(unittest.TestCase):
                 row.visibility.set_active(True)
                 self.wait_for(lambda: len(window.agenda.entry_buttons) == 1
                               and len(window.weekly_agenda.entry_buttons) == 1)
+
+    def test_file_colors_are_stable_and_match_calendar_events(self):
+        import datetime as dt
+        from utilitypane import FILE_COLORS, file_color, file_color_index
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "events.org")
+            alias = os.path.join(directory, "alias.org")
+            with open(path, "w") as stream:
+                stream.write(f"* Event <{dt.date.today().isoformat()}>\n")
+            os.symlink(path, alias)
+            self.assertEqual(file_color(path), file_color(alias))
+            self.assertIn(file_color(path), FILE_COLORS)
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                tab = self.app.new_tab()
+                self.app.show_agenda(tab.window)
+                for item, button in tab.window.agenda.entry_buttons:
+                    self.assertTrue(button.has_css_class(
+                        f"file-color-{file_color_index(item.entry.path)}"))
+                self.assertTrue(tab.window.agenda.entry_buttons)
 
     def test_utility_pane_collapses_and_its_header_button_toggles_the_overlay(self):
         tab = self.app.new_tab()
