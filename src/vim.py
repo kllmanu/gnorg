@@ -16,7 +16,7 @@ import org  # noqa: E402
 from agenda import AgendaView, show_zoom_toast  # noqa: E402
 from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
-from indent import OrgFold, OrgIndent, OrgTagAlign  # noqa: E402
+from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgTagAlign  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
@@ -121,6 +121,7 @@ class EditorTab(Adw.Bin):
         self._setup_style()
         self.org_indent = OrgIndent(self.view, app.org_indent_enabled)
         self.org_fold = OrgFold(self.view)
+        self.org_line_numbers = OrgLineNumbers(self.view)
         self.org_tag_align = OrgTagAlign(self.view)
         self.vim.connect("notify::command-bar-text", lambda *_: self.org_fold.track_visual_cursor(
             self.vim.get_command_bar_text() == GLib.dgettext(
@@ -149,10 +150,10 @@ class EditorTab(Adw.Bin):
             tab_width=4,
             indent_width=4,
             insert_spaces_instead_of_tabs=True,
-            top_margin=8,
-            bottom_margin=8,
-            left_margin=6,
-            right_margin=6,
+            top_margin=self.get_application().editor_padding,
+            bottom_margin=self.get_application().editor_padding,
+            left_margin=self.get_application().editor_padding,
+            right_margin=self.get_application().editor_padding,
             wrap_mode=Gtk.WrapMode.NONE,
         )
 
@@ -1198,6 +1199,8 @@ class OrganizerApplication(Adw.Application):
         self._agenda_refresh_id = 0
         self.org_indent_enabled = True
         self.show_line_numbers = False
+        self.editor_padding = 16
+        self.agenda_padding = 16
         self.auto_revert = True
         self.jj_escape = True
         self.jj_escape_delay = 200
@@ -1229,6 +1232,8 @@ class OrganizerApplication(Adw.Application):
         if self.settings:
             self.org_indent_enabled = self.settings.get_boolean("org-indent-mode")
             self.show_line_numbers = self.settings.get_boolean("show-line-numbers")
+            self.editor_padding = self.settings.get_int("editor-padding")
+            self.agenda_padding = self.settings.get_int("agenda-padding")
             self.auto_revert = self.settings.get_boolean("auto-revert")
             self.jj_escape = self.settings.get_boolean("jj-escape")
             self.jj_escape_delay = self.settings.get_int("jj-escape-delay")
@@ -1613,6 +1618,25 @@ class OrganizerApplication(Adw.Application):
                 self.settings.set_strv("recent-files", uris)
         BufferPicker(self.editor_tabs(), current, files).present(window)
 
+    def set_editor_padding(self, padding):
+        self.editor_padding = padding
+        for tab in self.editor_tabs():
+            tab.view.set_top_margin(padding)
+            tab.view.set_bottom_margin(padding)
+            tab.view.set_left_margin(padding)
+            tab.view.set_right_margin(padding)
+            tab.org_indent.queue_refresh()
+        if self.settings:
+            self.settings.set_int("editor-padding", padding)
+
+    def set_agenda_padding(self, padding):
+        self.agenda_padding = padding
+        for window in self.get_windows():
+            if isinstance(window, EditorWindow) and window.weekly_agenda is not None:
+                window.weekly_agenda.set_padding(padding)
+        if self.settings:
+            self.settings.set_int("agenda-padding", padding)
+
     def show_preferences(self):
         dialog = Adw.PreferencesDialog(title="Preferences")
         page = Adw.PreferencesPage()
@@ -1630,6 +1654,33 @@ class OrganizerApplication(Adw.Application):
         line_numbers_row.connect(
             "notify::active", lambda row, *_: self.set_show_line_numbers(row.get_active()))
         editor_group.add(line_numbers_row)
+        padding_row = Adw.ActionRow(
+            title="Editor Padding", subtitle="Space around the editor text, in pixels.")
+        padding_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 64, 1)
+        padding_scale.set_size_request(180, -1)
+        padding_scale.set_valign(Gtk.Align.CENTER)
+        padding_scale.set_draw_value(True)
+        padding_scale.set_digits(0)
+        padding_scale.set_value(self.editor_padding)
+        padding_scale.update_property([Gtk.AccessibleProperty.LABEL], ["Editor padding"])
+        padding_scale.connect(
+            "value-changed", lambda scale: self.set_editor_padding(round(scale.get_value())))
+        padding_row.add_suffix(padding_scale)
+        editor_group.add(padding_row)
+        agenda_padding_row = Adw.ActionRow(
+            title="Agenda Padding", subtitle="Space around the agenda entries, in pixels.")
+        agenda_padding_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 64, 1)
+        agenda_padding_scale.set_size_request(180, -1)
+        agenda_padding_scale.set_valign(Gtk.Align.CENTER)
+        agenda_padding_scale.set_draw_value(True)
+        agenda_padding_scale.set_digits(0)
+        agenda_padding_scale.set_value(self.agenda_padding)
+        agenda_padding_scale.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Agenda padding"])
+        agenda_padding_scale.connect(
+            "value-changed", lambda scale: self.set_agenda_padding(round(scale.get_value())))
+        agenda_padding_row.add_suffix(agenda_padding_scale)
+        editor_group.add(agenda_padding_row)
         auto_revert_row = Adw.SwitchRow(
             title="Automatically Reload Files",
             subtitle="Reload files changed on disk. Unsaved edits are kept and a warning is shown.",

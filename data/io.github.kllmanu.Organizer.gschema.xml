@@ -40,6 +40,18 @@
       <summary>Show line numbers</summary>
       <description>Display line numbers beside the text in all file editors.</description>
     </key>
+    <key name="agenda-padding" type="i">
+      <range min="0" max="64"/>
+      <default>16</default>
+      <summary>Agenda padding</summary>
+      <description>Padding in pixels on all four sides of the textual Agenda view. Changes apply immediately and are independent of editor padding.</description>
+    </key>
+    <key name="editor-padding" type="i">
+      <range min="0" max="64"/>
+      <default>16</default>
+      <summary>Editor padding</summary>
+      <description>Padding in pixels on all four sides of every file editor. Changes apply immediately; heading tags align inside the padding without changing file contents.</description>
+    </key>
     <key name="auto-revert" type="b">
       <default>true</default>
       <summary>Automatically reload files changed on disk</summary>

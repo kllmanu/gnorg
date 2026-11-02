@@ -148,6 +148,7 @@ class AgendaView(Adw.Bin):
             self.view.remove(self.scroller)
             self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
                                        css_classes=["organizer-agenda"])
+            self.set_padding(self.app.agenda_padding)
             self.scroller = Gtk.ScrolledWindow(child=self.listbox, vexpand=True)
             self.view.append(self.scroller)
         scroller = self.scroller
@@ -337,6 +338,13 @@ class AgendaView(Adw.Bin):
         if restore_focus:
             (selected_button or self.view).grab_focus()
 
+    def set_padding(self, padding):
+        if self.weekly:
+            self.listbox.set_margin_start(padding)
+            self.listbox.set_margin_end(padding)
+            self.listbox.set_margin_top(padding)
+            self.listbox.set_margin_bottom(padding)
+
     def _refresh_weekly(self, entries, today):
         selected = self.selected_item
         selected_index = next((i for i, (item, _) in enumerate(self.entry_buttons)
@@ -352,7 +360,7 @@ class AgendaView(Adw.Bin):
             entries, self.start, 7, today, with_todos=False, now=dt.datetime.now().time())
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
-                              css_classes=["monospace"], margin_start=12, margin_end=12,
+                              css_classes=["monospace"],
                               margin_top=1, margin_bottom=1)
             label.set_attributes(self._line_attributes(line))
             if line.kind == "item":

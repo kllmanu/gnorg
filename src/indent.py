@@ -1,10 +1,57 @@
 """Display-only Org indentation and heading folding for editor buffers."""
 
-from gi.repository import GLib, Gtk, Pango
+from gi.repository import GLib, Gtk, GtkSource, Pango
 
 import re
 
 import org
+
+
+class OrgLineNumbers(GtkSource.GutterRendererText):
+    """Keep native gutter selection behavior while skipping invisible Org lines."""
+
+    def __init__(self, view):
+        super().__init__(xalign=1, xpad=6, css_classes=["dim-label"])
+        self.view = view
+        self.native = None
+        self._size = None
+        self.gutter = view.get_gutter(Gtk.TextWindowType.LEFT)
+        self.gutter.insert(self, -31)
+        view.connect("notify::show-line-numbers", self._sync)
+        view.add_tick_callback(self._resize)
+        self._sync()
+
+    def _sync(self, *_):
+        child = self.gutter.get_first_child()
+        while child is not None:
+            if child is not self and child.__gtype__.name == "GtkSourceGutterRendererLines":
+                self.native = child
+                child.set_visible(False)
+            child = child.get_next_sibling()
+        self.set_visible(self.view.get_show_line_numbers())
+
+    def _resize(self, *_):
+        if self.get_visible():
+            width, _height = self.measure(str(self.view.get_buffer().get_line_count()))
+            if width != self._size:
+                self._size = width
+                self.set_size_request(width + 12, -1)
+        return GLib.SOURCE_CONTINUE
+
+    def do_snapshot_line(self, snapshot, lines, line):
+        iterator = lines.get_iter_at_line(line)
+        folded = iterator.get_buffer().get_tag_table().lookup("org-fold-hidden")
+        if folded is not None and iterator.has_tag(folded):
+            return
+        self.set_text(str(line + 1), -1)
+        GtkSource.GutterRendererText.do_snapshot_line(self, snapshot, lines, line)
+
+    def do_query_activatable(self, iterator, area):
+        return self.native is not None and self.native.query_activatable(iterator, area)
+
+    def do_activate(self, iterator, area, button, state, n_presses):
+        if self.native is not None:
+            self.native.emit("activate", iterator, area, button, state, n_presses)
 
 
 class OrgFold:

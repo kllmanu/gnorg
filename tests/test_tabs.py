@@ -31,6 +31,8 @@ class TabTests(unittest.TestCase):
         self.app._saved_utility_file_order = []
         self.app._last_selected_file = ""
         self.app.auto_revert = True
+        self.app.editor_padding = 16
+        self.app.agenda_padding = 16
         self.app.jj_escape = True
         self.app.jj_escape_delay = 200
         self.app.escape_sequence = "jj"
@@ -113,6 +115,59 @@ class TabTests(unittest.TestCase):
         tab.confirm_org_item()
         self.assertEqual(tab.get_text(), "* Report\n- [X] Task\n")
         self.assertIsNone(tab._active_tag_popover)
+
+    def test_editor_has_padding_on_all_sides(self):
+        tab = self.app.new_tab()
+        self.assertEqual((tab.view.get_top_margin(), tab.view.get_bottom_margin(),
+                          tab.view.get_left_margin(), tab.view.get_right_margin()),
+                         (16, 16, 16, 16))
+
+    def test_padding_slider_updates_open_and_new_editors_and_persists(self):
+        tab = self.app.new_tab()
+        tab.present()
+        self.app.show_preferences()
+        dialog = tab.window.get_visible_dialog()
+
+        def find_scale(widget):
+            if isinstance(widget, Gtk.Scale):
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                result = find_scale(child)
+                if result is not None:
+                    return result
+                child = child.get_next_sibling()
+            return None
+
+        scale = find_scale(dialog)
+        self.assertIsNotNone(scale)
+        self.assertEqual(scale.get_value(), 16)
+        with patch.object(self.app, "settings", Mock()) as settings:
+            scale.set_value(28)
+            settings.set_int.assert_called_once_with("editor-padding", 28)
+        dialog.close()
+        other = self.app.new_tab()
+        for editor in (tab, other):
+            self.assertEqual((editor.view.get_top_margin(), editor.view.get_bottom_margin(),
+                              editor.view.get_left_margin(), editor.view.get_right_margin()),
+                             (28, 28, 28, 28))
+        self.app.set_editor_padding(0)
+        self.assertEqual(tab.view.get_left_margin(), 0)
+
+    def test_agenda_padding_updates_existing_and_new_views(self):
+        tab = self.app.new_tab()
+        self.app.show_weekly_agenda(tab.window)
+        agenda = tab.window.weekly_agenda
+        self.assertEqual(agenda.listbox.get_margin_top(), 16)
+        with patch.object(self.app, "settings", Mock()) as settings:
+            self.app.set_agenda_padding(32)
+            settings.set_int.assert_called_once_with("agenda-padding", 32)
+        for margin in (agenda.listbox.get_margin_top(), agenda.listbox.get_margin_bottom(),
+                       agenda.listbox.get_margin_start(), agenda.listbox.get_margin_end()):
+            self.assertEqual(margin, 32)
+        self.assertEqual(tab.view.get_left_margin(), 16)
+        self.app.set_agenda_padding(0)
+        self.assertEqual(agenda.listbox.get_margin_start(), 0)
 
     def test_heading_tags_align_right_after_resize_without_changing_text(self):
         tab = self.app.new_tab()
@@ -1311,6 +1366,39 @@ class TabTests(unittest.TestCase):
 
         self.wait_for(aligned)
         self.assertEqual(tab.get_text(), "* Parent   \nBody\n* Next")
+
+    def test_line_numbers_skip_folded_bodies_and_restore_when_expanded(self):
+        from gi.repository import GtkSource
+
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent\nBody\nMore body\n* Next\nTail\n")
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        self.addCleanup(self.app.set_show_line_numbers, False)
+        self.app.set_show_line_numbers(True)
+        tab.present()
+        self.wait_for(tab.org_line_numbers.get_mapped)
+        self.assertFalse(tab.org_line_numbers.native.get_visible())
+        lines = Mock()
+        lines.get_iter_at_line.side_effect = lambda line: tab.buffer.get_iter_at_line(line)[1]
+
+        def drawn_lines():
+            drawn = []
+            with patch.object(GtkSource.GutterRendererText, "do_snapshot_line",
+                              side_effect=lambda *args: drawn.append(args[-1])):
+                for line in range(tab.buffer.get_line_count()):
+                    tab.org_line_numbers.do_snapshot_line(Mock(), lines, line)
+            return drawn
+
+        tab.org_fold.cycle(global_cycle=True)
+        self.assertEqual(drawn_lines(), [0, 3, 5])
+        tab.org_fold.cycle(global_cycle=True)
+        tab.org_fold.cycle(global_cycle=True)
+        self.assertEqual(drawn_lines(), list(range(6)))
+        self.app.set_show_line_numbers(False)
+        self.assertFalse(tab.org_line_numbers.get_visible())
+        self.app.set_show_line_numbers(True)
+        self.assertTrue(tab.org_line_numbers.get_visible())
+        self.assertFalse(tab.org_line_numbers.native.get_visible())
 
     def test_fold_dots_stay_after_title_before_right_aligned_tags(self):
         tab = self.app.new_tab()
