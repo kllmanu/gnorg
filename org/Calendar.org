@@ -5,29 +5,30 @@
 * Weekly rhythm :routine:
 These repeating timestamps populate future weeks too.
 Calendar shows active timestamps; scheduled tasks and deadlines are in Agenda.
+Tags beginning with @ are shown as locations below calendar event titles.
 
-** Team planning :work:
+** Team planning :work:@U328:
 <2026-11-02 Mon 09:00-10:00 +1w>
 
-** Design review :work:
+** Design review :work:@U407:
 <2026-11-02 Mon 09:30-10:30 +1w>
 Overlaps planning so you can test side-by-side calendar event layout.
 
-** Lunch walk :personal:
+** Lunch walk :personal:@Park:
 <2026-11-03 Tue 12:00-12:45 +1w>
 
-** Focus time :work:
+** Focus time :work:@Library:
 <2026-11-04 Wed 14:00-16:00 +1w>
 
-** Weekly wrap-up :work:
+** Weekly wrap-up :work:@U328:
 <2026-11-06 Fri 16:00-16:30 +1w>
 
-** Market :home:
+** Market :home:@TownSquare:
 <2026-11-07 Sat 10:00-11:00 +1w>
-Enable weekends in Preferences to see this in Calendar.
+Uncheck Hide Weekends in the Calendar menu to see this event.
 Agenda includes weekends regardless of the Calendar preference.
 
-* All-day reminder :personal:
+* All-day reminder :personal:@Home:
 <2026-11-05 Thu +1w>
 This appears in the calendar's all-day row.
 

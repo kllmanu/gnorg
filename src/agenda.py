@@ -2,6 +2,7 @@
 
 Agenda: d selects a day, w restores the week, f/b move by the current span,
 and . returns to today. Day selection follows the entry or mini-calendar.
+Calendar: finished events are faded; heading tags beginning with @ are locations.
 """
 
 import datetime as dt
@@ -45,6 +46,17 @@ def event_minutes(item):
     if end <= start:
         end = 1440
     return start, min(end, 1440)
+
+
+def event_is_past(item, now):
+    """Compare the displayed occurrence's end, not a repeater's original date."""
+    if item.date != now.date():
+        return item.date < now.date()
+    if item.ts.time is None:
+        return False
+    end = dt.datetime.combine(item.date, dt.time()) + dt.timedelta(
+        minutes=event_minutes(item)[1])
+    return end <= now
 
 
 def event_lanes(items):
@@ -105,6 +117,10 @@ class AgendaView(Adw.Bin):
         self.header = Adw.HeaderBar(title_widget=self.title_widget)
         self.window.add_sidebar_toggle(self.header)
         menu = Gio.Menu()
+        if not weekly:
+            calendar_menu = Gio.Menu()
+            calendar_menu.append("Hide Weekends", "app.hide-weekends")
+            menu.append_section(None, calendar_menu)
         menu.append("Preferences", "app.preferences")
         menu.append(f"About {GLib.get_application_name()}", "app.about")
         self.header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
@@ -168,7 +184,10 @@ class AgendaView(Adw.Bin):
             .calendar-day { border-left: 1px solid alpha(@view_fg_color, 0.12); }
             .calendar-event { background: alpha(@accent_bg_color, 0.18);
                 border: none; border-left: 3px solid @accent_bg_color;
-                border-radius: 4px; padding: 3px 5px; min-height: 0; min-width: 0; }
+                border-radius: 4px; padding: 3px 5px; min-height: 0; min-width: 0;
+                font-weight: normal; }
+            .calendar-event label { font-weight: normal; }
+            .calendar-event.past { opacity: 0.55; }
             .calendar-event.deadline { background: alpha(@error_color, 0.15);
                 border-left-color: @error_color; }
             .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
@@ -217,8 +236,8 @@ class AgendaView(Adw.Bin):
             style_manager = Adw.StyleManager.get_default()
             dark_handler = style_manager.connect("notify::dark", lambda *_: self.refresh())
             self.connect("destroy", lambda *_: style_manager.disconnect(dark_handler))
-            self._clock_id = GLib.timeout_add_seconds(30, self._refresh_clock)
-            self.connect("destroy", self._stop_clock)
+        self._clock_id = GLib.timeout_add_seconds(30, self._refresh_clock)
+        self.connect("destroy", self._stop_clock)
         if not weekly:
             GLib.idle_add(self._scroll_morning)
 
@@ -228,7 +247,19 @@ class AgendaView(Adw.Bin):
 
     def _refresh_clock(self):
         if self.window.active_view is self:
-            self.refresh()
+            if self.weekly:
+                self.refresh()
+            else:
+                now = dt.datetime.now()
+                for item, button in self.entry_buttons:
+                    if event_is_past(item, now):
+                        button.add_css_class("past")
+                    else:
+                        button.remove_css_class("past")
+                child = self.time_grid.get_first_child()
+                while child:
+                    child.get_child().queue_draw()
+                    child = child.get_next_sibling()
         return GLib.SOURCE_CONTINUE
 
     def _stop_clock(self, *_):
@@ -491,9 +522,14 @@ class AgendaView(Adw.Bin):
         entry = item.entry
         title = item.timestamp_title or (
             f"{entry.keyword} {entry.display_title}" if entry.keyword else entry.display_title)
-        button = Gtk.Button(tooltip_text=f"{title}\n{entry.path}",
+        location = ", ".join(tag[1:] for tag in entry.tags
+                             if tag.startswith("@") and len(tag) > 1)
+        tooltip = "\n".join(part for part in (title, location, entry.path) if part)
+        button = Gtk.Button(tooltip_text=tooltip,
                             css_classes=["calendar-event", "deadline"] if "deadline" in item.kind
                             else ["calendar-event"])
+        if event_is_past(item, dt.datetime.now()):
+            button.add_css_class("past")
         if "deadline" not in item.kind:
             button.add_css_class(f"file-color-{file_color_index(entry.path)}")
             color = self.app.calendar_file_color(entry.path)
@@ -511,6 +547,9 @@ class AgendaView(Adw.Bin):
                                  css_classes=["caption", "dim-label"]))
         content.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
                                  css_classes=["dim-label"] if entry.is_done else []))
+        if location:
+            content.append(Gtk.Label(label=location, xalign=0,
+                                     ellipsize=Pango.EllipsizeMode.END))
         button.set_child(content)
         button.connect("notify::has-focus",
                        lambda widget, *_: self._select(item) if widget.has_focus() else None)

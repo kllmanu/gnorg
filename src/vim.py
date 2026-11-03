@@ -1588,6 +1588,12 @@ class GnorgApplication(Adw.Application):
             action.connect("activate", callback)
             self.add_action(action)
 
+        weekends_action = Gio.SimpleAction.new_stateful(
+            "hide-weekends", None, GLib.Variant.new_boolean(self.hide_weekends))
+        weekends_action.connect(
+            "change-state", lambda _action, value: self.set_hide_weekends(value.get_boolean()))
+        self.add_action(weekends_action)
+
         self.set_accels_for_action("app.zoom-in", ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
         self.set_accels_for_action("app.zoom-out", ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
         self.set_accels_for_action("app.zoom-reset", ["<Ctrl>0", "<Ctrl>KP_0"])
@@ -2231,6 +2237,9 @@ class GnorgApplication(Adw.Application):
 
     def set_hide_weekends(self, enabled):
         self.hide_weekends = enabled
+        action = self.lookup_action("hide-weekends")
+        if action is not None:
+            action.set_state(GLib.Variant.new_boolean(enabled))
         if self.settings:
             self.settings.set_boolean("hide-weekends", enabled)
         for window in self.editor_windows():
