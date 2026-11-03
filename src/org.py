@@ -953,8 +953,7 @@ def agenda_date_line(date, today, first=False):
     return AgendaLine(text, "date", date=date, spans=[(0, len(text), style)])
 
 
-def format_agenda(entries, start, days, today, with_todos=True, width=AGENDA_WIDTH, now=None,
-                  group_weeks=False):
+def format_agenda(entries, start, days, today, with_todos=True, width=AGENDA_WIDTH, now=None):
     """The combined agenda (Emacs `C-c a n`): a day/week agenda followed by all TODO items."""
     def structure(text):
         return AgendaLine(text, "structure", spans=[(0, len(text), "agenda-structure")])
@@ -962,32 +961,17 @@ def format_agenda(entries, start, days, today, with_todos=True, width=AGENDA_WID
     week = start.isocalendar().week
     lines = [structure(f"{'Week' if days == 7 else 'Day' if days == 1 else f'{days} days'}-agenda (W{week:02d}):")]
     for i, (date, items) in enumerate(build_agenda(entries, start, days, today).items()):
-        if group_weeks:
-            if i == 0 or date.weekday() == 0:
-                end = min(week_start(date) + dt.timedelta(days=6),
-                          start + dt.timedelta(days=days - 1))
-                text = (f"Week {date.isocalendar().week:02d}: "
-                        f"{format_date(date, with_year=True)} – {format_date(end, with_year=True)}")
-                lines.append(AgendaLine(
-                    text, "week", date=date, spans=[(0, len(text), "agenda-structure")]))
-        else:
-            lines.append(agenda_date_line(date, today, first=i == 0))
+        lines.append(agenda_date_line(date, today, first=i == 0))
         day_lines = []
         for item in items:
             leader, style = _agenda_leader(item)
             line = agenda_item_line(item.entry, leader, style, _agenda_time(item.ts), width,
                                     timestamp_title=item.timestamp_title)
             line.date = date
-            if group_weeks:
-                prefix = f"{DAY_ABBR[date.weekday()]} {date.day:2d} {MONTH_ABBR[date.month - 1]}  "
-                line.text = "  " + prefix + line.text[2:]
-                line.spans = [
-                    (a if a == 0 else a + len(prefix), b + len(prefix), style)
-                    for a, b, style in line.spans]
             minute = (item.ts.time.hour * 60 + item.ts.time.minute
                       if item.ts.time and item.kind != "deadline-upcoming" else 1440)
             day_lines.append((minute, 1, line))
-        if date == today and now is not None and not group_weeks:
+        if date == today and now is not None:
             prefix = " " * (2 + CATEGORY_WIDTH)
             for hour in range(8, 21, 2):
                 text = f"{prefix}{hour:2d}:00 " + "." * 10 + " " + "-" * 15

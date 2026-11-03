@@ -8,7 +8,6 @@ Calendar: finished events are faded; heading tags beginning with @ are locations
 """
 
 import datetime as dt
-import calendar
 import os
 
 import gi
@@ -111,7 +110,6 @@ class AgendaView(Adw.Bin):
         self.stack_name = "weekly-agenda" if weekly else "agenda"
         self.start = org.week_start(dt.date.today())
         self.day_view = False
-        self.month_view = False
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
@@ -161,21 +159,8 @@ class AgendaView(Adw.Bin):
         navigation.append(following)
         navigation.append(self.today_button)
         self.week_label = Gtk.Label(xalign=1, css_classes=["heading"])
-        self.period_switcher = Gtk.Box(spacing=4)
-        self.month_button = Gtk.ToggleButton(css_classes=["flat"], tooltip_text="Month view")
-        self.week_button = Gtk.ToggleButton(css_classes=["flat"], tooltip_text="Week view")
-        self.week_button.set_group(self.month_button)
-        for button, title, icon, callback in (
-                (self.month_button, "Month", "x-office-calendar-symbolic", self.show_month),
-                (self.week_button, "Week", "view-list-symbolic", self.show_week)):
-            label = Gtk.Box(spacing=6)
-            label.append(Gtk.Image(icon_name=icon))
-            label.append(Gtk.Label(label=title))
-            button.set_child(label)
-            button.connect("clicked", lambda widget, cb=callback: cb() if widget.get_active() else None)
-            self.period_switcher.append(button)
         footer = Gtk.CenterBox(
-            start_widget=navigation, center_widget=self.period_switcher, end_widget=self.week_label,
+            start_widget=navigation, end_widget=self.week_label,
             margin_end=12)
         self.view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                             css_classes=["calendar-week"], focusable=True)
@@ -200,9 +185,6 @@ class AgendaView(Adw.Bin):
         self.scroller = Gtk.ScrolledWindow(child=time_row, vexpand=True,
                                            hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.view.append(self.scroller)
-        self.month_grid = Gtk.Grid(
-            column_homogeneous=True, hexpand=True, vexpand=True)
-        self.month_cells = {}
         if weekly:
             self.view.remove(header_row)
             self.view.remove(self.scroller)
@@ -222,14 +204,6 @@ class AgendaView(Adw.Bin):
                 font-weight: normal; }
             .calendar-event label { font-weight: normal; }
             .calendar-event.past label { opacity: 0.55; }
-            .calendar-month-day {
-                border-left: 1px solid alpha(@view_fg_color, 0.12);
-                border-top: 1px solid alpha(@view_fg_color, 0.12); }
-            .calendar-month-day.other-month { background: alpha(@view_fg_color, 0.03); }
-            .calendar-month-date { min-width: 24px; min-height: 20px;
-                padding: 0; border-radius: 999px; font-weight: normal; }
-            .calendar-month-date.today { background: @accent_bg_color; color: @accent_fg_color; }
-            .calendar-month-day.other-month .calendar-month-date { color: alpha(@view_fg_color, 0.45); }
             .gnorg-agenda > row { padding: 0; }
             .gnorg-agenda button { padding: 0; min-height: 0; font-weight: normal; }
             .gnorg-agenda button.agenda-cursor {
@@ -282,8 +256,7 @@ class AgendaView(Adw.Bin):
             GLib.idle_add(self._scroll_morning)
 
     def _scroll_morning(self):
-        if not self.month_view:
-            self.scroller.get_vadjustment().set_value(8 * 60)
+        self.scroller.get_vadjustment().set_value(8 * 60)
         return GLib.SOURCE_REMOVE
 
     def _refresh_clock(self):
@@ -341,7 +314,6 @@ class AgendaView(Adw.Bin):
         self.name = custom.title if custom else "Agenda"
         self.title_widget.set_title(self.name)
         self.day_view = custom is not None and custom.kind == "day"
-        self.month_view = False
         self.start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
         self.selected_item = None
         self.entry_buttons = []
@@ -359,26 +331,18 @@ class AgendaView(Adw.Bin):
             for color in colors))
         today = dt.date.today()
         day_count = self.day_count
-        span = "day" if self.day_view else "month" if self.month_view else "week"
+        span = "day" if self.day_view else "week"
         self.previous_button.set_tooltip_text(f"Previous {span}")
         self.next_button.set_tooltip_text(f"Next {span}")
         self.today_button.set_tooltip_text(
             "Go to today" if self.day_view else f"Go to the current {span}")
-        current_start = (today if self.day_view else today.replace(day=1) if self.month_view
-                         else org.week_start(today))
+        current_start = today if self.day_view else org.week_start(today)
         self.today_button.set_sensitive(self.start != current_start)
         for button in (self.previous_button, self.next_button):
             button.set_sensitive(not self.headline_view)
         if self.headline_view:
             self.today_button.set_sensitive(False)
-        self.period_switcher.set_visible(not self.headline_view)
-        self.month_button.set_active(self.month_view)
-        self.week_button.set_active(not self.month_view and not self.day_view)
         agenda_start = self.start
-        if self.month_view and not self.weekly:
-            agenda_start = org.week_start(self.start)
-            month_end = self.start + dt.timedelta(days=self.day_count - 1)
-            day_count = (org.week_start(month_end) - agenda_start).days + 7
         self.days = {
             date: [item for item in items if self.weekly or item.kind == "timestamp"]
             for date, items in org.build_agenda(entries, agenda_start, day_count, today).items()}
@@ -398,26 +362,17 @@ class AgendaView(Adw.Bin):
         if self.weekly:
             self._refresh_weekly(entries, today)
             return
-        self.calendar_header.set_visible(not self.month_view)
-        grid = self.month_grid if self.month_view else self.week_grid
-        viewport = self.scroller.get_child()
-        if viewport.get_child() is not grid:
-            self.scroller.set_child(grid)
         focus = self.window.get_focus()
         restore_focus = focus is not None and focus.is_ancestor(self.view)
         selected = self.selected_item
         selected_button = None
-        for grid in (self.day_headers, self.time_grid, self.month_grid):
+        for grid in (self.day_headers, self.time_grid):
             child = grid.get_first_child()
             while child:
                 grid.remove(child)
                 child = grid.get_first_child()
         self.entry_buttons = []
         self.selected_item = None
-        self.month_cells = {}
-        if self.month_view:
-            self._refresh_month(visible_days, today, selected, restore_focus)
-            return
         for column_index, (date, items) in enumerate(visible_days):
             heading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2,
                               hexpand=True, width_request=90,
@@ -463,55 +418,6 @@ class AgendaView(Adw.Bin):
         if restore_focus:
             (selected_button or self.view).grab_focus()
 
-    def _refresh_month(self, visible_days, today, selected, restore_focus):
-        weekdays = list(range(5 if self.app.hide_weekends else 7))
-        for column, weekday in enumerate(weekdays):
-            self.month_grid.attach(Gtk.Label(
-                label=org.DAY_ABBR[weekday], css_classes=["caption", "dim-label"],
-                margin_top=8, margin_bottom=8), column, 0, 1, 1)
-        selected_button = None
-        grid_start = org.week_start(self.start)
-        for date, items in visible_days:
-            cell = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL, spacing=2, width_request=80,
-                css_classes=["calendar-month-day"], hexpand=True, vexpand=True)
-            if date.month != self.start.month:
-                cell.add_css_class("other-month")
-            date_button = Gtk.Button(
-                label=str(date.day), tooltip_text=org.format_date(date, with_year=True),
-                halign=Gtk.Align.END, margin_top=2, margin_end=4,
-                css_classes=["flat", "calendar-month-date"])
-            if date == today:
-                date_button.add_css_class("today")
-            date_button.connect("clicked", lambda _button, day=date: self._show_date_week(day))
-            cell.append(date_button)
-            events = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL, spacing=3,
-                margin_start=3, margin_end=3, margin_bottom=4)
-            for item in items:
-                button = self._entry_button(item)
-                events.append(button)
-                self.entry_buttons.append((item, button))
-                if item == selected:
-                    self.selected_item = item
-                    selected_button = button
-            cell.append(Gtk.ScrolledWindow(
-                child=events, vexpand=True, min_content_height=32,
-                hscrollbar_policy=Gtk.PolicyType.NEVER))
-            self.month_grid.attach(cell, date.weekday(), (date - grid_start).days // 7 + 1, 1, 1)
-            self.month_cells[date] = cell
-        if restore_focus:
-            (selected_button or self.view).grab_focus()
-
-    def _show_date_week(self, date):
-        self.day_view = False
-        self.month_view = False
-        self.selected_item = None
-        self.start = org.week_start(date)
-        self._sync_calendar()
-        self.refresh(keep_scroll=False)
-        GLib.idle_add(self._scroll_morning)
-
     def set_padding(self, padding):
         if self.weekly:
             self.listbox.set_margin_start(padding)
@@ -542,11 +448,7 @@ class AgendaView(Adw.Bin):
             items = iter(item for day in self.days.values() for item in day)
             self.lines = org.format_agenda(
                 entries, self.start, self.day_count, today,
-                with_todos=False, now=dt.datetime.now().time(), group_weeks=self.month_view)
-            if self.month_view:
-                title = f"Month-agenda ({org.MONTH_NAMES[self.start.month - 1]} {self.start.year}):"
-                self.lines[0] = org.AgendaLine(
-                    title, "structure", spans=[(0, len(title), "agenda-structure")])
+                with_todos=False, now=dt.datetime.now().time())
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
                               css_classes=["monospace"],
@@ -655,11 +557,13 @@ class AgendaView(Adw.Bin):
             if item.ts.end_time:
                 time += "–" + item.ts.end_time.strftime("%H:%M")
             detail = time
-        content.append(Gtk.Label(label=detail, xalign=0, ellipsize=Pango.EllipsizeMode.END,
-                                 css_classes=["caption", "dim-label"]))
         content.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
                                  css_classes=["caption", "dim-label"] if entry.is_done
                                  else ["caption"]))
+        time_label = Gtk.Label(label=detail, xalign=0,
+                               ellipsize=Pango.EllipsizeMode.END,
+                               css_classes=["caption", "dim-label"])
+        content.prepend(time_label)
         if location:
             content.append(Gtk.Label(label=location, xalign=0,
                                      ellipsize=Pango.EllipsizeMode.END,
@@ -732,9 +636,8 @@ class AgendaView(Adw.Bin):
             "Down": lambda: self._move(1), "Up": lambda: self._move(-1),
             "Return": self.open_entry, "space": self.open_entry,
         }
-        commands.update({"w": self.show_week, "m": self.show_month})
         if self.weekly:
-            commands["d"] = self.show_day
+            commands.update({"d": self.show_day, "w": self.show_week})
         command = commands.get(Gdk.keyval_name(keyval))
         if command is None:
             return False
@@ -753,18 +656,14 @@ class AgendaView(Adw.Bin):
     def shift(self, direction):
         if self.headline_view:
             return
-        if self.month_view:
-            year, month = divmod(self.start.year * 12 + self.start.month - 1 + direction, 12)
-            self.start = dt.date(year, month + 1, 1)
-        else:
-            self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
+        self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
         self._sync_calendar()
         self.refresh()
 
     def _sync_calendar(self):
         if self.headline_view:
             return
-        if self.day_view or self.month_view:
+        if self.day_view:
             self.window.utility_pane.select_day(self.start)
         else:
             self.window.utility_pane.select_week(self.start)
@@ -776,17 +675,13 @@ class AgendaView(Adw.Bin):
         self.start = (self.selected_item.date if self.selected_item else
                       dt.date(date.get_year(), date.get_month(), date.get_day_of_month()))
         self.day_view = True
-        self.month_view = False
         self._sync_calendar()
         self.refresh(keep_scroll=False)
 
     def show_week(self):
-        if not (self.day_view or self.month_view) or self.headline_view:
+        if not self.day_view or self.headline_view:
             return
         self.day_view = False
-        if self.month_view and self.selected_item:
-            self.start = self.selected_item.date
-        self.month_view = False
         self.start = org.week_start(self.start)
         self._sync_calendar()
         self.refresh(keep_scroll=False)
@@ -795,24 +690,13 @@ class AgendaView(Adw.Bin):
 
     @property
     def day_count(self):
-        return (calendar.monthrange(self.start.year, self.start.month)[1] if self.month_view
-                else 1 if self.day_view else 7)
-
-    def show_month(self):
-        if self.month_view or self.headline_view:
-            return
-        selected = self.selected_item.date if self.selected_item else self.start
-        self.start = selected.replace(day=1)
-        self.day_view = False
-        self.month_view = True
-        self._sync_calendar()
-        self.refresh(keep_scroll=False)
+        return 1 if self.day_view else 7
 
     def goto_today(self):
         if self.headline_view:
             return
         today = dt.date.today()
-        start = today if self.day_view else today.replace(day=1) if self.month_view else org.week_start(today)
+        start = today if self.day_view else org.week_start(today)
         if not self.weekly and self.start == start:
             return
         self.start = start

@@ -8,109 +8,18 @@ from vim import Gdk, Gio, GLib, Gtk, Pango
 
 
 class CalendarTests(EditorTestCase):
-    def test_month_switcher_builds_graphical_grid_and_preserves_event_behavior(self):
-        import datetime as dt
-        import org
-
+    def test_calendar_has_only_week_view_and_no_month_shortcut(self):
         self.app.show_agenda()
         view = self.app.agenda
-        view.start = dt.date(2026, 11, 2)
-        entries = org.parse_entries(
-            "* Previous month\n<2026-10-30 10:00>\n"
-            "* Timed :@U328:\n<2026-11-04 09:00-10:00>\n"
-            "* All day\n<2026-11-05>\n"
-            "* TODO Scheduled\nSCHEDULED: <2026-11-04>\n"
-            "* TODO Deadline\nDEADLINE: <2026-11-05>\n"
-            "* Weekend\n<2026-11-07>\n"
-            "* Next month\n<2026-12-01>\n", "/org/events.org")
-        self.addCleanup(self.app.set_hide_weekends, True)
-        with patch.object(self.app, "agenda_entries",
-                          return_value=("/org", ["/org/events.org"], entries)):
-            view.refresh()
-            self.assertTrue(view.week_button.get_active())
-            view.month_button.emit("clicked")
-            self.assertTrue(view.month_view)
-            self.assertTrue(view.month_button.get_active())
-            self.assertFalse(view.week_button.get_active())
-            self.assertIs(view.scroller.get_child().get_child(), view.month_grid)
-            self.assertFalse(view.calendar_header.get_visible())
-            self.assertEqual(view.start, dt.date(2026, 11, 1))
-            self.assertEqual(len(view.month_cells), 30)
-            self.assertNotIn(dt.date(2026, 11, 7), view.month_cells)
-            self.assertTrue(view.month_cells[dt.date(2026, 10, 30)].has_css_class("other-month"))
-            self.assertTrue(view.month_cells[dt.date(2026, 12, 1)].has_css_class("other-month"))
-            self.assertIsNone(view.month_grid.get_child_at(5, 1))
-            titles = {item.entry.title for item, _ in view.entry_buttons}
-            self.assertEqual(titles, {"Previous month", "Timed", "All day", "Next month"})
-            self.app.set_hide_weekends(False)
-            self.assertEqual(len(view.month_cells), 42)
-            self.assertIn(dt.date(2026, 11, 7), view.month_cells)
-            item, button = next((item, button) for item, button in view.entry_buttons
-                                if item.entry.title == "Timed")
-            self.assertEqual(button.get_child().get_last_child().get_label(), "@U328")
-            self.assertEqual(button.get_cursor().get_name(), "pointer")
-            with patch.object(self.app, "open_location") as open_location:
-                button.emit("clicked")
-                open_location.assert_called_once_with("/org/events.org", item.timestamp_line)
-            view.selected_item = item
-            view.week_button.emit("clicked")
-            self.assertFalse(view.month_view)
-            self.assertTrue(view.week_button.get_active())
-            self.assertIs(view.scroller.get_child().get_child(), view.week_grid)
-            self.assertTrue(view.calendar_header.get_visible())
-            self.assertEqual(view.start, org.week_start(item.date))
-            self.assertEqual(view.selected_item, item)
-
-    def test_month_navigation_year_boundaries_and_date_cell_opens_week(self):
-        import datetime as dt
-        import org
-
-        self.app.show_agenda()
-        view = self.app.agenda
-        view.start = dt.date(2027, 12, 6)
-        view.selected_item = None
-        view.show_month()
-        view.next_button.emit("clicked")
-        self.assertEqual(view.start, dt.date(2028, 1, 1))
+        start = view.start
+        self.assertFalse(view._on_key_pressed(None, Gdk.KEY_m, 0, Gdk.ModifierType(0)))
+        self.assertEqual(view.start, start)
+        self.assertEqual(view.day_count, 7)
+        self.assertIsNone(view.toasts.get_child().get_last_child().get_center_widget())
+        self.assertIs(view.scroller.get_child().get_child(), view.week_grid)
         view.shift(1)
-        self.assertEqual(view.start, dt.date(2028, 2, 1))
-        self.assertIn(dt.date(2028, 2, 29), view.month_cells)
-        view.previous_button.emit("clicked")
-        self.assertEqual(view.start, dt.date(2028, 1, 1))
-        view.month_cells[dt.date(2028, 1, 12)].get_first_child().emit("clicked")
-        self.assertFalse(view.month_view)
-        self.assertEqual(view.start, org.week_start(dt.date(2028, 1, 12)))
-        self.assertTrue(view.week_button.get_active())
-        view.show_month()
-        view.goto_today()
-        self.assertEqual(view.start, dt.date.today().replace(day=1))
-        self.assertFalse(view.today_button.get_sensitive())
-
-    def test_six_week_month_fits_window_and_crowded_days_scroll(self):
         import datetime as dt
-        import org
-
-        self.app.show_agenda()
-        view = self.app.agenda
-        view.start = dt.date(2026, 11, 2)
-        entries = org.parse_entries("".join(
-            f"* Event {i} :@U328:\n<2026-11-04 {i + 8:02d}:00>\n" for i in range(8)),
-            "/org/events.org")
-        with patch.object(self.app, "agenda_entries",
-                          return_value=("/org", ["/org/events.org"], entries)):
-            view.show_month()
-            adjustment = view.scroller.get_vadjustment()
-            self.wait_for(lambda: adjustment.get_page_size() > 100
-                          and adjustment.get_upper() <= adjustment.get_page_size() + 1)
-            events = view.month_cells[dt.date(2026, 11, 4)].get_last_child()
-            self.assertGreater(events.get_vadjustment().get_upper(),
-                               events.get_vadjustment().get_page_size())
-            self.assertEqual(len(view.entry_buttons), 8)
-            footer = view.toasts.get_child().get_last_child()
-            ok, bounds = view.period_switcher.compute_bounds(footer)
-            self.assertTrue(ok)
-            self.assertAlmostEqual(bounds.get_x() + bounds.get_width() / 2,
-                                   footer.get_width() / 2, delta=1)
+        self.assertEqual(view.start, start + dt.timedelta(days=7))
 
     def test_calendar_footer_shows_month_name_and_year_after_navigation(self):
         import datetime as dt

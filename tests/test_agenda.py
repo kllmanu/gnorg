@@ -274,7 +274,7 @@ class AgendaTests(EditorTestCase):
         footer = content.get_last_child()
         navigation = footer.get_start_widget()
         self.assertIs(footer.get_end_widget(), agenda.week_label)
-        self.assertIs(footer.get_center_widget(), agenda.period_switcher)
+        self.assertIsNone(footer.get_center_widget())
         previous = navigation.get_first_child()
         following = previous.get_next_sibling()
         today = following.get_next_sibling()
