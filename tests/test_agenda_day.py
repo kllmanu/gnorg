@@ -9,7 +9,7 @@ from vim import Gdk, GLib
 
 
 class AgendaDayTests(EditorTestCase):
-    def test_month_lists_all_days_and_keeps_appointments_and_planning(self):
+    def test_month_groups_weeks_and_keeps_dated_appointments_and_planning(self):
         agenda = self.agenda()
         agenda.start = dt.date(2026, 11, 2)
         entries = org.parse_entries(
@@ -25,7 +25,16 @@ class AgendaDayTests(EditorTestCase):
             self.assertFalse(agenda.day_view)
             self.assertEqual(agenda.start, dt.date(2026, 11, 1))
             self.assertEqual(len(agenda.days), 30)
-            self.assertEqual(sum(line.kind == "date" for line in agenda.lines), 30)
+            self.assertEqual(sum(line.kind == "date" for line in agenda.lines), 0)
+            self.assertEqual(sum(line.kind == "week" for line in agenda.lines), 6)
+            self.assertFalse(any(line.kind in ("time-grid", "now") for line in agenda.lines))
+            appointment_line = next(line for line in agenda.lines
+                                    if line.kind == "item" and "Appointment" in line.text)
+            self.assertTrue(appointment_line.text.startswith("  Tue 17 Nov  "))
+            self.assertTrue(any(line.text.startswith("Week 44: Sun 1 Nov 2026")
+                                for line in agenda.lines))
+            self.assertTrue(any(line.text.startswith("Week 49: Mon 30 Nov 2026")
+                                for line in agenda.lines))
             self.assertEqual(agenda.lines[0].text, "Month-agenda (November 2026):")
             self.assertEqual(agenda.previous_button.get_tooltip_text(), "Previous month")
             self.assertNotIn("Outside", {item.entry.title for item, _ in agenda.entry_buttons})

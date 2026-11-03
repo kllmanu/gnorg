@@ -447,7 +447,7 @@ class AgendaView(Adw.Bin):
             items = iter(item for day in self.days.values() for item in day)
             self.lines = org.format_agenda(
                 entries, self.start, self.day_count, today,
-                with_todos=False, now=dt.datetime.now().time())
+                with_todos=False, now=dt.datetime.now().time(), group_weeks=self.month_view)
             if self.month_view:
                 title = f"Month-agenda ({org.MONTH_NAMES[self.start.month - 1]} {self.start.year}):"
                 self.lines[0] = org.AgendaLine(
