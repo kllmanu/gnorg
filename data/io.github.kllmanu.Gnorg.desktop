@@ -2,7 +2,7 @@
 Name=Gnorg
 Comment=Gnorg is not org - an Org mode editor with Vim keybindings
 Exec=gnorg %F
-Icon=accessories-text-editor
+Icon=io.github.kllmanu.Gnorg
 Terminal=false
 Type=Application
 StartupNotify=true

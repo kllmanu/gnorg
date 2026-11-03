@@ -1,6 +1,7 @@
 PREFIX ?= $(HOME)/.local
 APP_DIR = $(PREFIX)/share/gnorg
 SCHEMA_DIR = $(PREFIX)/share/glib-2.0/schemas
+ICON_DIR = $(PREFIX)/share/icons/hicolor/scalable/apps
 
 run: schemas
 	GNORG_AGENDA_DIRECTORY="$(CURDIR)/org" python3 src/app.py
@@ -20,6 +21,7 @@ install:
 	install -Dm644 -t $(APP_DIR)/styles data/styles/*.xml
 	install -d $(PREFIX)/bin
 	ln -sf $(APP_DIR)/app.py $(PREFIX)/bin/gnorg
+	install -Dm644 data/icon.svg $(ICON_DIR)/io.github.kllmanu.Gnorg.svg
 	install -Dm644 data/io.github.kllmanu.Gnorg.desktop $(PREFIX)/share/applications/io.github.kllmanu.Gnorg.desktop
 	install -Dm644 data/io.github.kllmanu.Gnorg.gschema.xml $(SCHEMA_DIR)/io.github.kllmanu.Gnorg.gschema.xml
 	rm -f $(PREFIX)/share/applications/io.github.kllmanu.Organizer.desktop
@@ -29,6 +31,7 @@ install:
 uninstall:
 	rm -rf $(APP_DIR)
 	rm -f $(PREFIX)/bin/gnorg $(PREFIX)/share/applications/io.github.kllmanu.Gnorg.desktop
+	rm -f $(ICON_DIR)/io.github.kllmanu.Gnorg.svg
 	rm -f $(SCHEMA_DIR)/io.github.kllmanu.Gnorg.gschema.xml
 	glib-compile-schemas $(SCHEMA_DIR)
 
