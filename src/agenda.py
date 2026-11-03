@@ -61,6 +61,16 @@ def event_is_past(item, now):
     return end <= now
 
 
+def event_color_css(selector, color):
+    """Blend against the calendar surface while keeping event backgrounds opaque."""
+    return "\n".join(
+        f"{selector}{state} {{ background: mix(@view_bg_color, {color}, {strength}); "
+        f"border-left-color: mix(@view_bg_color, {color}, {border}); }}"
+        for state, strength, border in (
+            ("", 0.18, 1), (":hover", 0.28, 1),
+            (".past", 0.10, 0.55), (".past:hover", 0.16, 0.55)))
+
+
 def event_lanes(items):
     """Assign overlapping events equal-width lanes within each overlap group."""
     events = sorted(((*event_minutes(item), i) for i, item in enumerate(items)))
@@ -185,26 +195,21 @@ class AgendaView(Adw.Bin):
         css.load_from_string("""
             .calendar-week { background: @view_bg_color; }
             .calendar-day { border-left: 1px solid alpha(@view_fg_color, 0.12); }
-            .calendar-event { background: alpha(@accent_bg_color, 0.18);
-                border: none; border-left: 3px solid @accent_bg_color;
+            .calendar-event { border: none; border-left: 3px solid @accent_bg_color;
                 border-radius: 4px; padding: 3px 5px; min-height: 0; min-width: 0;
                 font-weight: normal; }
             .calendar-event label { font-weight: normal; }
-            .calendar-event.past { opacity: 0.55; }
-            .calendar-event.deadline { background: alpha(@error_color, 0.15);
-                border-left-color: @error_color; }
-            .calendar-event:hover { background: alpha(@accent_bg_color, 0.28); }
+            .calendar-event.past label { opacity: 0.55; }
             .gnorg-agenda > row { padding: 0; }
             .gnorg-agenda button { padding: 0; min-height: 0; font-weight: normal; }
             .gnorg-agenda button.agenda-cursor {
                 background: alpha(@accent_bg_color, 0.18); }
             .gnorg-agenda row.agenda-today {
                 background: alpha(@view_fg_color, 0.06); }
-        """ + "\n".join(
-            f".calendar-event.file-color-{index} {{ "
-            f"background: alpha({color}, 0.18); border-left-color: {color}; }} "
-            f".calendar-event.file-color-{index}:hover {{ background: alpha({color}, 0.28); }}"
-            for index, color in enumerate(FILE_COLORS)))
+        """ + event_color_css(".calendar-event", "@accent_bg_color")
+            + event_color_css(".calendar-event.deadline", "@error_color")
+            + "\n".join(event_color_css(f".calendar-event.file-color-{index}", color)
+                        for index, color in enumerate(FILE_COLORS)))
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -318,10 +323,7 @@ class AgendaView(Adw.Bin):
             entries = [entry for entry in entries if self.custom.matches(entry)]
         colors = set(self.app.file_colors.values())
         self.file_color_css.load_from_string("\n".join(
-            f".calendar-event.custom-color-{color[1:]}:not(.deadline) {{ "
-            f"background: alpha({color}, 0.18); border-left-color: {color}; }} "
-            f".calendar-event.custom-color-{color[1:]}:not(.deadline):hover {{ "
-            f"background: alpha({color}, 0.28); }}"
+            event_color_css(f".calendar-event.custom-color-{color[1:]}:not(.deadline)", color)
             for color in colors))
         today = dt.date.today()
         day_count = 1 if self.day_view else 7
@@ -535,6 +537,7 @@ class AgendaView(Adw.Bin):
         button = Gtk.Button(tooltip_text=tooltip,
                             css_classes=["calendar-event", "deadline"] if "deadline" in item.kind
                             else ["calendar-event"])
+        button.set_cursor_from_name("pointer")
         if event_is_past(item, dt.datetime.now()):
             button.add_css_class("past")
         if "deadline" not in item.kind:
@@ -553,10 +556,12 @@ class AgendaView(Adw.Bin):
         content.append(Gtk.Label(label=detail, xalign=0, ellipsize=Pango.EllipsizeMode.END,
                                  css_classes=["caption", "dim-label"]))
         content.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
-                                 css_classes=["dim-label"] if entry.is_done else []))
+                                 css_classes=["caption", "dim-label"] if entry.is_done
+                                 else ["caption"]))
         if location:
             content.append(Gtk.Label(label=location, xalign=0,
-                                     ellipsize=Pango.EllipsizeMode.END))
+                                     ellipsize=Pango.EllipsizeMode.END,
+                                     margin_top=4, css_classes=["caption", "dim-label"]))
         button.set_child(content)
         button.connect("notify::has-focus",
                        lambda widget, *_: self._select(item) if widget.has_focus() else None)

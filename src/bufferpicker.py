@@ -87,10 +87,6 @@ class BufferPicker(Gtk.Popover):
         else:
             self.window._find_file()
 
-    def _close_tab(self, tab):
-        self.close(restore_focus=False)
-        tab.close()
-
     def _filter(self, *_):
         query = self.search.get_text()
         self.listbox.remove_all()
@@ -110,11 +106,6 @@ class BufferPicker(Gtk.Popover):
                                 activatable=True)
             if tab.buffer.get_modified():
                 row.set_title("• " + name)
-            close_button = Gtk.Button(icon_name="window-close-symbolic",
-                                      tooltip_text="Close document", valign=Gtk.Align.CENTER,
-                                      css_classes=["flat"])
-            close_button.connect("clicked", lambda _button, document=tab: self._close_tab(document))
-            row.add_suffix(close_button)
             self.listbox.append(row)
         for file in self.recent_files:
             if not file.query_exists(None):

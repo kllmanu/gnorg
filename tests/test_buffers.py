@@ -12,6 +12,44 @@ from bufferpicker import BufferPicker, matches_buffer
 
 
 class BufferPickerTests(EditorTestCase):
+    def test_buffer_picker_has_no_remove_or_close_buttons(self):
+        from vim import Gtk
+
+        first = self.app.new_tab()
+        first.file = Gio.File.new_for_path("/org/hidden.org")
+        first.buffer.set_text("* Unsaved edits")
+        second = self.app.new_tab()
+        second.present()
+        picker = BufferPicker(self.app.editor_tabs(), second)
+        picker.present(second.window)
+        row = picker.listbox.get_row_at_index(0)
+
+        def find_remove(widget):
+            if isinstance(widget, Gtk.Button) and widget.get_icon_name() == "window-close-symbolic":
+                return widget
+            child = widget.get_first_child()
+            while child:
+                found = find_remove(child)
+                if found is not None:
+                    return found
+                child = child.get_next_sibling()
+            return None
+
+        self.assertIsNone(find_remove(row))
+        self.assertIsNone(find_remove(picker.listbox))
+        self.assertIn(first, picker.results)
+        self.assertIn(first, self.app.editor_tabs())
+        self.assertEqual(first.get_text(), "* Unsaved edits")
+        self.assertTrue(first.buffer.get_modified())
+        self.assertIs(second.window.active_tab, second)
+        self.assertIsNotNone(picker.get_parent())
+        picker.close()
+        self.wait_for(lambda: picker.get_parent() is None)
+        reopened = BufferPicker(self.app.editor_tabs(), second, [first.file])
+        self.assertIn(first, reopened.results)
+        self.assertEqual(first.get_text(), "* Unsaved edits")
+        self.assertTrue(first.buffer.get_modified())
+
     def test_buffer_picker_in_agenda_uses_utility_pane_and_restores_focus(self):
         tab = self.app.new_tab()
         tab.present()

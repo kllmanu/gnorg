@@ -102,6 +102,8 @@ class CalendarTests(EditorTestCase):
             calendar.refresh()
         buttons = {item.entry.title: button for item, button in calendar.entry_buttons}
         lecture = buttons["Lecture"]
+        self.assertTrue(all(button.get_cursor().get_name() == "pointer"
+                            for button in buttons.values()))
         self.assertEqual(lecture.get_child().get_last_child().get_label(), "U328, Lab2")
         self.assertEqual(lecture.get_tooltip_text(), "Lecture\nU328, Lab2\n/org/events.org")
         self.assertEqual(buttons["All day"].get_child().get_last_child().get_label(), "U407")
@@ -109,7 +111,7 @@ class CalendarTests(EditorTestCase):
                          "No location")
         self.assertEqual(entries[0].tags, ["work", "@U328", "@Lab2"])
 
-    def test_calendar_event_labels_use_regular_font_weight(self):
+    def test_calendar_event_labels_use_compact_regular_type_and_muted_location(self):
         import org
 
         self.app.show_agenda()
@@ -123,15 +125,28 @@ class CalendarTests(EditorTestCase):
         calendar.window.present()
         button = calendar.entry_buttons[0][1]
         self.wait_for(button.get_mapped)
-        label = button.get_child().get_first_child()
+        content = button.get_child()
+        self.assertEqual(content.get_orientation(), Gtk.Orientation.VERTICAL)
+        time = content.get_first_child()
+        title = time.get_next_sibling()
+        location = content.get_last_child()
+        self.assertIs(title.get_next_sibling(), location)
+        self.assertEqual(location.get_css_classes(), time.get_css_classes())
+        self.assertGreater(location.get_margin_top(), 0)
+        sizes = []
+        label = time
         while label:
             layout = label.get_layout()
             run = layout.get_iter().get_run_readonly()
             self.assertIsNotNone(run)
-            self.assertEqual(run.item.analysis.font.describe().get_weight(), Pango.Weight.NORMAL)
+            font = run.item.analysis.font.describe()
+            self.assertEqual(font.get_weight(), Pango.Weight.NORMAL)
+            sizes.append(font.get_size())
             label = label.get_next_sibling()
+        self.assertEqual(sizes, [sizes[0]] * 3)
+        self.assertLess(sizes[0], content.get_pango_context().get_font_description().get_size())
 
-    def test_calendar_past_style_fades_the_whole_event_with_custom_file_color(self):
+    def test_calendar_past_style_keeps_background_opaque_with_custom_file_color(self):
         import datetime as dt
         import org
 
@@ -161,7 +176,10 @@ class CalendarTests(EditorTestCase):
 
         self.wait_for(rendered_event)
         rendered = bytes(node.serialize().get_data()).decode()
-        self.assertRegex(rendered, r"opacity \{\s+opacity: 0\.55;\s+child: container")
+        self.assertNotRegex(rendered, r"opacity \{\s+opacity: 0\.55;\s+child: container")
+        self.assertRegex(
+            rendered, r"color \{\s+bounds: [^;]+;\s+color: (?:rgb\([^)]*\)|color\(srgb [^/)]*\));")
+        self.assertRegex(rendered, r"opacity \{\s+opacity: 0\.55;\s+child: text")
 
     def test_calendar_clock_updates_past_style_without_rebuilding_events(self):
         import datetime as dt
