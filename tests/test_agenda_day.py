@@ -9,6 +9,26 @@ from vim import Gdk, GLib
 
 
 class AgendaDayTests(EditorTestCase):
+    def test_bottom_switcher_tracks_keyboard_modes_and_custom_headline_views(self):
+        agenda = self.agenda()
+        self.assertTrue(agenda.week_button.get_active())
+        agenda.month_button.emit("clicked")
+        self.assertTrue(agenda.month_view)
+        self.assertTrue(agenda.month_button.get_active())
+        self.assertEqual(sum(line.kind == "date" for line in agenda.lines), 0)
+        agenda.week_button.emit("clicked")
+        self.assertEqual(len(agenda.days), 7)
+        self.assertTrue(agenda.week_button.get_active())
+        self.press(agenda, Gdk.KEY_d)
+        self.assertFalse(agenda.week_button.get_active())
+        self.assertFalse(agenda.month_button.get_active())
+        self.press(agenda, Gdk.KEY_m)
+        self.assertTrue(agenda.month_button.get_active())
+        from customagenda import CustomAgenda
+        agenda.set_custom(CustomAgenda("h", "Headlines"))
+        agenda.refresh()
+        self.assertFalse(agenda.period_switcher.get_visible())
+
     def test_month_groups_weeks_and_keeps_dated_appointments_and_planning(self):
         agenda = self.agenda()
         agenda.start = dt.date(2026, 11, 2)

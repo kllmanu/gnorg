@@ -45,6 +45,8 @@ Use Tab to cycle folding, or Shift+Tab for the whole document.
 - In Agenda: d for one day, w for the week, m for the month, f/b to navigate,
   . for the current day, week, or month.
   Month view groups entries by week and shows each entry's weekday and date.
+  The bottom Month/Week buttons also switch views. Calendar's Month view shows a
+  graphical month grid; click a date number to open that week.
 - In Agenda or Calendar: C-x C-s saves all modified files without leaving the view.
 - In Agenda: click an item to select it, then click it again to open its headline.
 - C-c a opens the agenda chooser; then a opens the built-in Agenda.
