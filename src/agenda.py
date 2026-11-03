@@ -531,7 +531,7 @@ class AgendaView(Adw.Bin):
         entry = item.entry
         title = item.timestamp_title or (
             f"{entry.keyword} {entry.display_title}" if entry.keyword else entry.display_title)
-        location = ", ".join(tag[1:] for tag in entry.tags
+        location = ", ".join(tag for tag in entry.tags
                              if tag.startswith("@") and len(tag) > 1)
         tooltip = "\n".join(part for part in (title, location, entry.path) if part)
         button = Gtk.Button(tooltip_text=tooltip,

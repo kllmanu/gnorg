@@ -104,9 +104,9 @@ class CalendarTests(EditorTestCase):
         lecture = buttons["Lecture"]
         self.assertTrue(all(button.get_cursor().get_name() == "pointer"
                             for button in buttons.values()))
-        self.assertEqual(lecture.get_child().get_last_child().get_label(), "U328, Lab2")
-        self.assertEqual(lecture.get_tooltip_text(), "Lecture\nU328, Lab2\n/org/events.org")
-        self.assertEqual(buttons["All day"].get_child().get_last_child().get_label(), "U407")
+        self.assertEqual(lecture.get_child().get_last_child().get_label(), "@U328, @Lab2")
+        self.assertEqual(lecture.get_tooltip_text(), "Lecture\n@U328, @Lab2\n/org/events.org")
+        self.assertEqual(buttons["All day"].get_child().get_last_child().get_label(), "@U407")
         self.assertEqual(buttons["No location"].get_child().get_last_child().get_label(),
                          "No location")
         self.assertEqual(entries[0].tags, ["work", "@U328", "@Lab2"])
