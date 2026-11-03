@@ -27,7 +27,7 @@ Literal spans keep their contents unchanged: =*not bold*= and ~/not italic/~.
 
 ** Mouse interactions :editor:
 Click this headline to fold or show its immediate children.
-Click tags or their hover edit icon to edit them.
+Click tags to edit them.
 Hover over the STARTUP line above to change its folding mode.
 
 *** A nested heading

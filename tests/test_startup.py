@@ -1,4 +1,4 @@
-"""Startup directive editing through the inline button."""
+"""Startup directive editing through text clicks and keyboard shortcuts."""
 
 from editor_test_case import EditorTestCase
 from unittest.mock import Mock
@@ -12,9 +12,9 @@ class StartupTests(EditorTestCase):
                             "SCHEDULED: <2026-11-04> extra text\n"
                             "<2026-11-05> trailing text\n")
         tab.present()
-        self.wait_for(lambda: 0 in tab.org_startup_edit.buttons)
+        self.wait_for(lambda: 0 in tab.org_startup_edit._regions)
         for line, open_popover, attribute in (
-                (0, lambda: tab.edit_startup(0, tab.org_startup_edit.buttons[0]),
+                (0, lambda: tab.edit_startup(0),
                  "_active_startup_popover"),
                 (1, tab.edit_tags, "_active_tag_popover"),
                 (2, lambda: tab.edit_planning("SCHEDULED"), "_active_date_popover"),
@@ -53,13 +53,13 @@ class StartupTests(EditorTestCase):
         dropdown = tab._active_startup_popover.get_child().get_first_child().get_next_sibling()
         self.assertEqual(dropdown.get_selected(), 0)
 
-    def test_startup_icon_changes_folding_preserves_options_and_undoes(self):
+    def test_startup_text_changes_folding_preserves_options_and_undoes(self):
         tab = self.app.new_tab()
         text = "#+STARTUP: overview indent\n* Parent\nBody\n** Child\nDetails\n"
         tab.buffer.set_text(text)
         tab.present()
-        self.wait_for(lambda: 0 in tab.org_startup_edit.buttons)
-        tab.org_startup_edit.buttons[0].emit("clicked")
+        self.wait_for(lambda: 0 in tab.org_startup_edit._regions)
+        tab.edit_startup(0)
         dialog = tab._active_startup_popover
         dropdown = dialog.get_child().get_first_child().get_next_sibling()
         self.assertIsInstance(dropdown, Gtk.DropDown)
@@ -77,25 +77,25 @@ class StartupTests(EditorTestCase):
         text = "#+startup: content\n#+BEGIN_SRC org\n#+STARTUP: overview\n#+END_SRC\n"
         tab.buffer.set_text(text)
         tab.present()
-        self.wait_for(lambda: len(tab.org_startup_edit.buttons) == 1)
-        self.assertEqual(set(tab.org_startup_edit.buttons), {0})
+        self.wait_for(lambda: len(tab.org_startup_edit._regions) == 1)
+        self.assertEqual(set(tab.org_startup_edit._regions), {0})
+        child = tab.view.get_first_child()
+        while child is not None:
+            self.assertFalse(isinstance(child, Gtk.Button))
+            child = child.get_next_sibling()
         editor = tab.org_startup_edit
         editor._leave()
-        button = editor.buttons[0]
-        self.assertEqual(button.get_opacity(), 0)
-        self.assertFalse(button.get_can_target())
         self.wait_for(lambda: 0 in editor._regions)
         left, top, right, bottom = editor._regions[0]
         editor._motion(None, left + 1, (top + bottom) / 2)
         self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
-        self.assertEqual(button.get_opacity(), 1)
-        self.assertTrue(button.get_can_target())
         editor._motion(None, right - 1, (top + bottom) / 2)
-        self.assertEqual(button.get_opacity(), 1)
+        gesture = Mock()
+        editor._pressed(gesture, 1, right + 1, (top + bottom) / 2)
+        gesture.set_state.assert_not_called()
         editor._leave()
-        self.assertEqual(button.get_opacity(), 0)
         self.assertEqual(tab.view.get_cursor().get_name(), "text")
-        tab.org_startup_edit.buttons[0].emit("clicked")
+        editor._pressed(Mock(), 1, left + 1, (top + bottom) / 2)
         dialog = tab._active_startup_popover
         dialog.get_child().get_first_child().get_next_sibling().set_selected(3)
         tab._keyboard_quit()

@@ -7,6 +7,54 @@ from vim import Gdk, Graphene, Gtk
 
 
 class TagTests(EditorTestCase):
+    def test_nested_tags_remain_clickable_when_body_is_folded(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text(
+            "#+STARTUP: content\n* Project :work:\n"
+            "** DONE Writing :writing:\nCLOSED: [2026-11-02]\n"
+            "** TODO Testing :testing:\nSCHEDULED: <2026-11-09>\n"
+            "** TODO Review :review:\nDEADLINE: <2026-11-06>\n")
+        tab.present()
+        align = tab.org_tag_align
+        self.wait_for(lambda: all(line in align._hover_regions for line in (2, 4, 6))
+                      and tab.org_fold.mode == "content"
+                      and align._hover_regions[2][1] < align._hover_regions[4][1]
+                      < align._hover_regions[6][1])
+        for line, tag in ((2, "writing"), (4, "testing"), (6, "review")):
+            left, top, right, bottom = align._hover_regions[line]
+            self.assertGreater(bottom, top)
+            align._on_motion(None, (left + right) / 2, (top + bottom) / 2)
+            self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
+            gesture = Mock()
+            align._on_tag_pressed(gesture, 1, (left + right) / 2, (top + bottom) / 2)
+            gesture.set_state.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+            entry = tab._active_tag_popover.get_child().get_first_child().get_next_sibling()
+            self.assertEqual(entry.get_text(), tag)
+            tab._keyboard_quit()
+            self.wait_for(lambda: tab._active_tag_popover is None)
+
+    def test_no_edit_icons_and_only_visible_tag_text_is_clickable(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("* Parent :work:\n** Child :home:\n")
+        tab.present()
+        align = tab.org_tag_align
+        self.wait_for(lambda: len(align._hover_regions) == 2)
+        child = tab.view.get_first_child()
+        while child is not None:
+            self.assertFalse(isinstance(child, Gtk.Button))
+            child = child.get_next_sibling()
+        left, top, right, bottom = align._hover_regions[1]
+        align._on_motion(None, left + 1, (top + bottom) / 2)
+        self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
+        gesture = Mock()
+        align._on_tag_pressed(gesture, 1, right + 1, (top + bottom) / 2)
+        gesture.set_state.assert_not_called()
+        tab.buffer.place_cursor(tab.buffer.get_start_iter())
+        tab.org_fold.cycle()
+        self.wait_for(lambda: 1 not in align._hover_regions)
+        self.assertIn(0, align._hover_regions)
+
+
     def open_heading_tags(self, tab):
         tab.present()
         self.wait_for(tab.view.get_mapped)
@@ -65,7 +113,7 @@ class TagTests(EditorTestCase):
 
         def aligned():
             right = (tab.view.get_visible_rect().width - tab.view.get_right_margin()
-                     - 2 - tab.org_tag_align.BUTTON_SPACE)
+                     - 2)
             return right > 100 and all(abs(tab.view.get_iter_location(
                 tab.buffer.get_iter_at_line_offset(line, len(heading))[1]).x - right) <= 2
                 for line, heading in enumerate(text.splitlines()[:2]))
@@ -121,8 +169,7 @@ class TagTests(EditorTestCase):
         _ok, anchor = popover.get_pointing_to()
         _left, top, right, _bottom = tab.org_tag_align._hover_regions[0]
         _ok, point = tab.view.compute_point(
-            tab.editor_box, Graphene.Point().init(
-                right - 4 - max(tab.org_tag_align.buttons[0].get_width(), 24), top))
+            tab.editor_box, Graphene.Point().init(right, top))
         self.assertAlmostEqual(anchor.x, point.x, delta=2)
         self.assertAlmostEqual(anchor.y, point.y, delta=2)
         self.assertGreater(anchor.x, tab._cursor_rect().x + 100)
@@ -143,8 +190,7 @@ class TagTests(EditorTestCase):
         self.assertEqual(entry.get_text(), "home")
         _ok, anchor = tab._active_tag_popover.get_pointing_to()
         _ok, point = tab.view.compute_point(
-            tab.editor_box, Graphene.Point().init(
-                right - 4 - max(tab.org_tag_align.buttons[1].get_width(), 24), top))
+            tab.editor_box, Graphene.Point().init(right, top))
         self.assertAlmostEqual(anchor.x, point.x, delta=2)
         self.assertAlmostEqual(anchor.y, point.y, delta=2)
         self.assertGreater(anchor.x, tab._cursor_rect().x + 100)
@@ -153,44 +199,3 @@ class TagTests(EditorTestCase):
         align._on_tag_pressed(gesture, 1, left - 10, (top + bottom) / 2)
         gesture.set_state.assert_not_called()
         self.assertIsNone(tab._active_tag_popover)
-
-    def test_tag_edit_icon_opens_correct_heading_and_hides_when_folded(self):
-        tab = self.app.new_tab()
-        text = "* Parent :work:\n** Child :home:\nBody\n"
-        tab.buffer.set_text(text)
-        tab.buffer.place_cursor(tab.buffer.get_start_iter())
-        tab.present()
-        self.wait_for(lambda: len(tab.org_tag_align.buttons) == 2)
-        button = tab.org_tag_align.buttons[0]
-
-        def icon_inside_padding():
-            ok, bounds = button.compute_bounds(tab.view)
-            return (ok and button.get_width() > 0
-                    and bounds.get_x() + bounds.get_width()
-                    <= tab.view.get_width() - tab.view.get_right_margin())
-
-        self.wait_for(icon_inside_padding)
-        align = tab.org_tag_align
-        align._on_leave()
-        self.assertEqual(button.get_opacity(), 0)
-        self.assertFalse(button.get_can_target())
-        left, top, right, bottom = align._hover_regions[0]
-        align._on_motion(None, left + 1, (top + bottom) / 2)
-        self.assertEqual(button.get_opacity(), 1)
-        self.assertTrue(button.get_can_target())
-        self.assertEqual(tab.view.get_cursor().get_name(), "pointer")
-        align._on_motion(None, right - 1, (top + bottom) / 2)
-        self.assertEqual(button.get_opacity(), 1)
-        align._on_motion(None, left - 10, (top + bottom) / 2)
-        self.assertEqual(button.get_opacity(), 0)
-        self.assertEqual(tab.view.get_cursor().get_name(), "text")
-        tab.org_tag_align.buttons[1].emit("clicked")
-        self.assertIsNotNone(tab._active_tag_popover)
-        entry = tab._active_tag_popover.get_child().get_first_child().get_next_sibling()
-        self.assertEqual(entry.get_text(), "home")
-        tab._keyboard_quit()
-        tab.buffer.place_cursor(tab.buffer.get_start_iter())
-        tab.org_fold.cycle()
-        self.wait_for(lambda: not tab.org_tag_align.buttons[1].get_visible())
-        self.assertTrue(tab.org_tag_align.buttons[0].get_visible())
-        self.assertEqual(tab.get_text(), text)

@@ -408,13 +408,12 @@ class OrgFold:
 
 
 class OrgStartupEdit:
-    """Place an edit button beside STARTUP directives outside literal blocks."""
+    """Make STARTUP directives clickable outside literal blocks."""
 
     def __init__(self, view, edit):
         self.view = view
         self.edit = edit
-        self.buttons = {}
-        self._pool = []
+        self._lines = []
         self._dirty = True
         self._pointer = None
         self._regions = {}
@@ -432,15 +431,11 @@ class OrgStartupEdit:
     def _changed(self, *_):
         self._dirty = True
 
-    def _clicked(self, button):
-        line = next(line for line, widget in self.buttons.items() if widget is button)
-        self.edit(line, button)
-
     def _pressed(self, gesture, _n_press, x, y):
         for line, (left, top, right, bottom) in self._regions.items():
             if left <= x < right and top <= y < bottom:
                 gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-                self.edit(line, self.buttons[line])
+                self.edit(line)
                 return
 
     def _motion(self, _controller, x, y):
@@ -453,24 +448,20 @@ class OrgStartupEdit:
 
     def _update_hover(self):
         hovering = False
-        for line, button in self.buttons.items():
+        for line in self._regions:
             active = False
             if self._pointer is not None and line in self._regions:
                 x, y = self._pointer
                 left, top, right, bottom = self._regions[line]
                 active = left <= x < right and top <= y < bottom
             hovering = hovering or active
-            button.set_opacity(1 if active else 0)
-            button.set_can_target(active)
         _set_pointer_hover(self.view, self, hovering)
 
     def _layout(self, *_):
         buffer = self.view.get_buffer()
         if self._dirty:
             self._dirty = False
-            for button in self._pool:
-                button.set_visible(False)
-            self.buttons.clear()
+            self._lines.clear()
             in_block = False
             for line, text in enumerate(buffer.get_text(*buffer.get_bounds(), True).split("\n")):
                 if in_block:
@@ -481,35 +472,22 @@ class OrgStartupEdit:
                     continue
                 if not org.STARTUP_RE.match(text):
                     continue
-                index = len(self.buttons)
-                if index == len(self._pool):
-                    button = Gtk.Button(icon_name="document-edit-symbolic",
-                                        tooltip_text="Edit startup folding",
-                                        css_classes=["flat", "tag-edit-button"])
-                    button.set_cursor_from_name("pointer")
-                    button.set_opacity(0)
-                    button.set_can_target(False)
-                    button.connect("clicked", self._clicked)
-                    self.view.add_overlay(button, 0, 0)
-                    self._pool.append(button)
-                self.buttons[line] = self._pool[index]
+                self._lines.append(line)
         folded = buffer.get_tag_table().lookup("org-fold-hidden")
         self._regions.clear()
-        for line, button in self.buttons.items():
+        for line in self._lines:
             end = buffer.get_iter_at_line(line)[1]
-            button.set_visible(folded is None or not end.has_tag(folded))
-            if not button.get_visible():
+            if folded is not None and end.has_tag(folded):
                 continue
             first = self.view.get_iter_location(end)
             if not end.ends_line():
                 end.forward_to_line_end()
             rect = self.view.get_iter_location(end)
-            self.view.move_overlay(button, rect.x + 6, rect.y)
             x, y = self.view.buffer_to_window_coords(
-                Gtk.TextWindowType.WIDGET, first.x, rect.y)
+                Gtk.TextWindowType.WIDGET, first.x, first.y)
             right, _ = self.view.buffer_to_window_coords(
-                Gtk.TextWindowType.WIDGET, rect.x + 6 + max(button.get_width(), 24), rect.y)
-            self._regions[line] = (x, y, right, y + max(rect.height, 24))
+                Gtk.TextWindowType.WIDGET, rect.x, rect.y)
+            self._regions[line] = (x, y, right, y + rect.height)
         self._update_hover()
         return GLib.SOURCE_CONTINUE
 
@@ -620,13 +598,9 @@ class OrgTodoInteraction:
 class OrgTagAlign:
     """Stretch heading tag separators to the viewport edge without editing text."""
 
-    BUTTON_SPACE = 28
-
     def __init__(self, view, edit_tags):
         self.view = view
         self.edit_tags = edit_tags
-        self.buttons = {}
-        self._button_pool = []
         self._pointer = None
         self._hover_regions = {}
         self._tag_starts = {}
@@ -639,11 +613,6 @@ class OrgTagAlign:
         click = Gtk.GestureClick(button=1, propagation_phase=Gtk.PropagationPhase.CAPTURE)
         click.connect("pressed", self._on_tag_pressed)
         view.add_controller(click)
-        css = Gtk.CssProvider()
-        css.load_from_string(
-            ".tag-edit-button { padding: 0; min-width: 24px; min-height: 24px; }")
-        Gtk.StyleContext.add_provider_for_display(
-            view.get_display(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.buffer = view.get_buffer()
         self._tags = []
         self._lines = []
@@ -664,9 +633,6 @@ class OrgTagAlign:
             self._dirty = True
         if self._dirty:
             self._dirty = False
-            for button in self._button_pool:
-                button.set_visible(False)
-            self.buttons.clear()
             self._tag_starts.clear()
             for tag in self._tags:
                 self.buffer.remove_tag(tag, *self.buffer.get_bounds())
@@ -689,31 +655,14 @@ class OrgTagAlign:
                 self.buffer.apply_tag(tag, start, end)
                 self._lines.append((line, len(text.rstrip()), count, tag))
                 self._tag_starts[line] = match.start() + count
-                if index == len(self._button_pool):
-                    button = Gtk.Button(icon_name="document-edit-symbolic",
-                                        tooltip_text="Edit heading tags",
-                                        css_classes=["flat", "tag-edit-button"])
-                    button.set_size_request(24, 24)
-                    button.set_cursor_from_name("pointer")
-                    button.set_opacity(0)
-                    button.set_can_target(False)
-                    button.connect("clicked", self._edit_clicked)
-                    self.view.add_overlay(button, 0, 0)
-                    self._button_pool.append(button)
-                button = self._button_pool[index]
-                self.buttons[line] = button
         # Leave room for TextView's end-of-line caret in the scrollable extent.
-        right = (self.view.get_visible_rect().width - self.view.get_right_margin()
-                 - 2 - self.BUTTON_SPACE)
+        right = self.view.get_visible_rect().width - self.view.get_right_margin() - 2
         self._hover_regions.clear()
         for line, end, count, tag in self._lines:
             iterator = self.buffer.get_iter_at_line_offset(line, end)[1]
             folded = self.buffer.get_tag_table().lookup("org-fold-hidden")
             if folded is not None and iterator.has_tag(folded):
-                self.buttons[line].set_visible(False)
                 continue
-            button = self.buttons[line]
-            button.set_visible(True)
             x = self.view.get_iter_location(iterator).x
             delta = right - x
             if abs(delta) > 1:
@@ -721,14 +670,13 @@ class OrgTagAlign:
                 if spacing != tag.props.letter_spacing:
                     tag.props.letter_spacing = spacing
             rect = self.view.get_iter_location(iterator)
-            self.view.move_overlay(button, rect.x + 4, rect.y)
             first = self.view.get_iter_location(self.buffer.get_iter_at_line_offset(
                 line, self._tag_starts[line])[1])
             x, y = self.view.buffer_to_window_coords(
                 Gtk.TextWindowType.WIDGET, first.x, rect.y)
             last_x, _ = self.view.buffer_to_window_coords(
-                Gtk.TextWindowType.WIDGET, rect.x + 4 + max(button.get_width(), 24), rect.y)
-            self._hover_regions[line] = (x, y, last_x, y + max(rect.height, 24))
+                Gtk.TextWindowType.WIDGET, rect.x, rect.y)
+            self._hover_regions[line] = (x, y, last_x, y + first.height)
         self._update_hover()
         return GLib.SOURCE_CONTINUE
 
@@ -754,18 +702,10 @@ class OrgTagAlign:
             hovered = next((line for line, (left, top, right, bottom)
                             in self._hover_regions.items()
                             if left <= x < right and top <= y < bottom), None)
-        for line, button in self.buttons.items():
-            active = line == hovered
-            button.set_opacity(1 if active else 0)
-            button.set_can_target(active)
         hovering = hovered is not None
         if hovering != self._hovering_tags:
             _set_pointer_hover(self.view, self, hovering)
             self._hovering_tags = hovering
-
-    def _edit_clicked(self, button):
-        line = next(line for line, widget in self.buttons.items() if widget is button)
-        self.edit_tags(line)
 
 
 class OrgIndent:

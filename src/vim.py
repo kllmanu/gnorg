@@ -524,13 +524,13 @@ class EditorTab(Adw.Bin):
         line = self._cursor_line()
         text = self.get_text().split("\n")[line]
         if org.STARTUP_RE.match(text):
-            self.edit_startup(line, self.org_startup_edit.buttons.get(line))
+            self.edit_startup(line)
         elif org.parse_heading(text) is not None:
             self.edit_tags()
         else:
             self.toggle_checkbox()
 
-    def edit_startup(self, line, button):
+    def edit_startup(self, line):
         if self._active_startup_popover is not None:
             self._active_startup_popover.popdown()
             return
