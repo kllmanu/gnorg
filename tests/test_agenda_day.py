@@ -9,6 +9,64 @@ from vim import Gdk, GLib
 
 
 class AgendaDayTests(EditorTestCase):
+    def test_month_lists_all_days_and_keeps_appointments_and_planning(self):
+        agenda = self.agenda()
+        agenda.start = dt.date(2026, 11, 2)
+        entries = org.parse_entries(
+            "* Appointment :@U328:\n<2026-11-17 12:00>\n"
+            "* TODO Scheduled\nSCHEDULED: <2026-11-30>\n"
+            "* TODO Deadline\nDEADLINE: <2026-11-20>\n"
+            "* Outside\n<2026-12-01>\n", "/org/events.org")
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/events.org"], entries)):
+            agenda.refresh()
+            self.press(agenda, Gdk.KEY_m)
+            self.assertTrue(agenda.month_view)
+            self.assertFalse(agenda.day_view)
+            self.assertEqual(agenda.start, dt.date(2026, 11, 1))
+            self.assertEqual(len(agenda.days), 30)
+            self.assertEqual(sum(line.kind == "date" for line in agenda.lines), 30)
+            self.assertEqual(agenda.lines[0].text, "Month-agenda (November 2026):")
+            self.assertEqual(agenda.previous_button.get_tooltip_text(), "Previous month")
+            self.assertNotIn("Outside", {item.entry.title for item, _ in agenda.entry_buttons})
+            self.assertTrue({"timestamp", "scheduled", "deadline"} <= {
+                item.kind for item, _ in agenda.entry_buttons})
+            appointment, button = next((item, button) for item, button in agenda.entry_buttons
+                                       if item.entry.title == "Appointment")
+            agenda.selected_item = appointment
+            self.press(agenda, Gdk.KEY_d)
+            self.assertEqual(agenda.start, dt.date(2026, 11, 17))
+            self.assertTrue(agenda.day_view)
+            self.assertFalse(agenda.month_view)
+            self.press(agenda, Gdk.KEY_m)
+            self.press(agenda, Gdk.KEY_w)
+            self.assertEqual(len(agenda.days), 7)
+            self.assertFalse(agenda.month_view)
+
+    def test_month_navigation_handles_year_boundaries_and_leap_years(self):
+        agenda = self.agenda()
+        agenda.start = dt.date(2027, 12, 6)
+        agenda.selected_item = None
+        self.press(agenda, Gdk.KEY_m)
+        self.press(agenda, Gdk.KEY_f)
+        self.assertEqual(agenda.start, dt.date(2028, 1, 1))
+        self.assertEqual(len(agenda.days), 31)
+        agenda.next_button.emit("clicked")
+        self.assertEqual(agenda.start, dt.date(2028, 2, 1))
+        self.assertEqual(len(agenda.days), 29)
+        agenda.previous_button.emit("clicked")
+        self.assertEqual(agenda.start, dt.date(2028, 1, 1))
+        self.press(agenda, Gdk.KEY_b)
+        self.assertEqual(agenda.start, dt.date(2027, 12, 1))
+        agenda.window.utility_pane.calendar.set_date(
+            GLib.DateTime.new_local(2027, 2, 17, 0, 0, 0))
+        self.assertTrue(agenda.month_view)
+        self.assertEqual(agenda.start, dt.date(2027, 2, 1))
+        self.assertEqual(len(agenda.days), 28)
+        self.press(agenda, Gdk.KEY_period)
+        self.assertEqual(agenda.start, dt.date.today().replace(day=1))
+        self.assertFalse(agenda.today_button.get_sensitive())
+
     def agenda(self):
         tab = self.app.new_tab()
         self.app.show_weekly_agenda(tab.window)

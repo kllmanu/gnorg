@@ -526,7 +526,8 @@ class UtilityPane(Adw.Bin):
             else:
                 self.app.show_agenda(self.window)
                 view = self.window.agenda
-            view.start = selected if view.day_view else org.week_start(selected)
+            view.start = (selected if view.day_view else selected.replace(day=1) if view.month_view
+                          else org.week_start(selected))
             view.refresh(keep_scroll=False)
         finally:
             self._syncing = False
@@ -580,7 +581,7 @@ class UtilityPane(Adw.Bin):
                 selected_row = grid.query_child(child)[1]
             child = child.get_next_sibling()
         view = self.window.active_view
-        if selected_row is None or getattr(view, "day_view", False):
+        if selected_row is None or getattr(view, "day_view", False) or getattr(view, "month_view", False):
             return
         for column in range(1, 8):
             cell = grid.get_child_at(column, selected_row)

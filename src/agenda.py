@@ -8,6 +8,7 @@ Calendar: finished events are faded; heading tags beginning with @ are locations
 """
 
 import datetime as dt
+import calendar
 import os
 
 import gi
@@ -110,6 +111,7 @@ class AgendaView(Adw.Bin):
         self.stack_name = "weekly-agenda" if weekly else "agenda"
         self.start = org.week_start(dt.date.today())
         self.day_view = False
+        self.month_view = False
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
@@ -310,6 +312,7 @@ class AgendaView(Adw.Bin):
         self.name = custom.title if custom else "Agenda"
         self.title_widget.set_title(self.name)
         self.day_view = custom is not None and custom.kind == "day"
+        self.month_view = False
         self.start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
         self.selected_item = None
         self.entry_buttons = []
@@ -326,12 +329,15 @@ class AgendaView(Adw.Bin):
             event_color_css(f".calendar-event.custom-color-{color[1:]}:not(.deadline)", color)
             for color in colors))
         today = dt.date.today()
-        day_count = 1 if self.day_view else 7
-        self.previous_button.set_tooltip_text("Previous day" if self.day_view else "Previous week")
-        self.next_button.set_tooltip_text("Next day" if self.day_view else "Next week")
-        self.today_button.set_tooltip_text("Go to today" if self.day_view else "Go to the current week")
-        self.today_button.set_sensitive(
-            self.start != (today if self.day_view else org.week_start(today)))
+        day_count = self.day_count
+        span = "day" if self.day_view else "month" if self.month_view else "week"
+        self.previous_button.set_tooltip_text(f"Previous {span}")
+        self.next_button.set_tooltip_text(f"Next {span}")
+        self.today_button.set_tooltip_text(
+            "Go to today" if self.day_view else f"Go to the current {span}")
+        current_start = (today if self.day_view else today.replace(day=1) if self.month_view
+                         else org.week_start(today))
+        self.today_button.set_sensitive(self.start != current_start)
         for button in (self.previous_button, self.next_button):
             button.set_sensitive(not self.headline_view)
         if self.headline_view:
@@ -440,8 +446,12 @@ class AgendaView(Adw.Bin):
         else:
             items = iter(item for day in self.days.values() for item in day)
             self.lines = org.format_agenda(
-                entries, self.start, 1 if self.day_view else 7, today,
+                entries, self.start, self.day_count, today,
                 with_todos=False, now=dt.datetime.now().time())
+            if self.month_view:
+                title = f"Month-agenda ({org.MONTH_NAMES[self.start.month - 1]} {self.start.year}):"
+                self.lines[0] = org.AgendaLine(
+                    title, "structure", spans=[(0, len(title), "agenda-structure")])
         for line in self.lines:
             label = Gtk.Label(label=line.text, xalign=0, selectable=False,
                               css_classes=["monospace"],
@@ -628,7 +638,7 @@ class AgendaView(Adw.Bin):
             "Return": self.open_entry, "space": self.open_entry,
         }
         if self.weekly:
-            commands.update({"d": self.show_day, "w": self.show_week})
+            commands.update({"d": self.show_day, "w": self.show_week, "m": self.show_month})
         command = commands.get(Gdk.keyval_name(keyval))
         if command is None:
             return False
@@ -647,14 +657,18 @@ class AgendaView(Adw.Bin):
     def shift(self, direction):
         if self.headline_view:
             return
-        self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
+        if self.month_view:
+            year, month = divmod(self.start.year * 12 + self.start.month - 1 + direction, 12)
+            self.start = dt.date(year, month + 1, 1)
+        else:
+            self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
         self._sync_calendar()
         self.refresh()
 
     def _sync_calendar(self):
         if self.headline_view:
             return
-        if self.day_view:
+        if self.day_view or self.month_view:
             self.window.utility_pane.select_day(self.start)
         else:
             self.window.utility_pane.select_week(self.start)
@@ -666,21 +680,41 @@ class AgendaView(Adw.Bin):
         self.start = (self.selected_item.date if self.selected_item else
                       dt.date(date.get_year(), date.get_month(), date.get_day_of_month()))
         self.day_view = True
+        self.month_view = False
         self._sync_calendar()
         self.refresh(keep_scroll=False)
 
     def show_week(self):
-        if not self.day_view or self.headline_view:
+        if not (self.day_view or self.month_view) or self.headline_view:
             return
         self.day_view = False
+        if self.month_view and self.selected_item:
+            self.start = self.selected_item.date
+        self.month_view = False
         self.start = org.week_start(self.start)
+        self._sync_calendar()
+        self.refresh(keep_scroll=False)
+
+    @property
+    def day_count(self):
+        return (calendar.monthrange(self.start.year, self.start.month)[1] if self.month_view
+                else 1 if self.day_view else 7)
+
+    def show_month(self):
+        if self.month_view or self.headline_view:
+            return
+        selected = self.selected_item.date if self.selected_item else self.start
+        self.start = selected.replace(day=1)
+        self.day_view = False
+        self.month_view = True
         self._sync_calendar()
         self.refresh(keep_scroll=False)
 
     def goto_today(self):
         if self.headline_view:
             return
-        start = dt.date.today() if self.day_view else org.week_start(dt.date.today())
+        today = dt.date.today()
+        start = today if self.day_view else today.replace(day=1) if self.month_view else org.week_start(today)
         if not self.weekly and self.start == start:
             return
         self.start = start
