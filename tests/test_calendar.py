@@ -8,6 +8,20 @@ from vim import Gdk, Gio, GLib, Gtk, Pango
 
 
 class CalendarTests(EditorTestCase):
+    def test_calendar_footer_shows_month_name_and_year_after_navigation(self):
+        import datetime as dt
+
+        self.app.show_agenda()
+        calendar = self.app.agenda
+        calendar.start = dt.date(2026, 11, 2)
+        calendar.refresh()
+        self.assertEqual(calendar.week_label.get_label(), "November 2026")
+        calendar.start = dt.date(2026, 12, 28)
+        calendar.refresh()
+        self.assertEqual(calendar.week_label.get_label(), "December 2026")
+        calendar.shift(1)
+        self.assertEqual(calendar.week_label.get_label(), "January 2027")
+
     def test_calendar_menu_toggles_saved_weekends_preference_in_all_windows(self):
         import datetime as dt
         import org

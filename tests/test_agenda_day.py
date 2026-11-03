@@ -35,7 +35,8 @@ class AgendaDayTests(EditorTestCase):
             self.assertTrue(agenda.lines[0].text.startswith("Day-agenda"))
             self.assertEqual([item.entry.title for item, _ in agenda.entry_buttons], ["Selected"])
             self.assertEqual(agenda.previous_button.get_tooltip_text(), "Previous day")
-            self.assertEqual(agenda.week_label.get_label(), org.format_date(day, with_year=True))
+            self.assertEqual(agenda.week_label.get_label(),
+                             f"{org.MONTH_NAMES[day.month - 1]} {day.year}")
             self.press(agenda, Gdk.KEY_w)
             self.assertEqual(agenda.start, start)
             self.assertEqual(len(agenda.days), 7)

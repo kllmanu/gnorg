@@ -13,6 +13,56 @@ from vim import Adw
 
 
 class UtilityPaneTests(EditorTestCase):
+    def test_calendar_highlights_one_continuous_week_and_keeps_native_selection(self):
+        import datetime as dt
+
+        tab = self.app.new_tab()
+        pane = tab.window.utility_pane
+        self.assertTrue(pane.calendar.has_css_class("utility-calendar"))
+        pane.select_day(dt.date(2026, 11, 3))
+        grid = pane.calendar.get_last_child()
+
+        def highlighted():
+            result = []
+            child = grid.get_first_child()
+            while child:
+                if child.has_css_class("selected-week"):
+                    result.append(child)
+                child = child.get_next_sibling()
+            return result
+
+        cells = highlighted()
+        self.assertEqual(len(cells), 7)
+        self.assertEqual([cell.get_text() for cell in cells], ["2", "3", "4", "5", "6", "7", "8"])
+        self.assertTrue(cells[0].has_css_class("week-start"))
+        self.assertTrue(cells[-1].has_css_class("week-end"))
+        tab.present()
+        self.wait_for(pane.calendar.get_mapped)
+        pane.calendar.mark_day(4)
+        cell = grid.get_child_at(3, 2)
+        paintable = Gtk.WidgetPaintable.new(cell)
+        node = None
+
+        def rendered_dot():
+            nonlocal node
+            pane.calendar.mark_day(4)
+            snapshot = Gtk.Snapshot.new()
+            paintable.snapshot(snapshot, cell.get_width(), cell.get_height())
+            node = snapshot.to_node()
+            return node is not None and "radial-gradient" in bytes(
+                node.serialize().get_data()).decode()
+
+        self.wait_for(rendered_dot)
+        pane.select_day(dt.date(2026, 11, 17))
+        self.assertEqual([cell.get_text() for cell in highlighted()],
+                         ["16", "17", "18", "19", "20", "21", "22"])
+        self.app.show_weekly_agenda(tab.window)
+        tab.window.weekly_agenda.show_day()
+        pane.update_marks()
+        self.assertEqual(highlighted(), [])
+        tab.window.weekly_agenda.show_week()
+        self.assertEqual(len(highlighted()), 7)
+
     def test_utility_pane_replaces_tab_bar_and_selects_documents(self):
         first = self.app.new_tab()
         first.buffer.set_text("* First")

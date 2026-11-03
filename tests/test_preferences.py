@@ -201,8 +201,8 @@ class PreferenceTests(EditorTestCase):
                 self.assertIsNone(agenda.day_headers.get_child_at(5, 0))
                 self.assertEqual(len(agenda.days[saturday]), 1)
                 self.assertEqual(agenda.entry_buttons, [])
-                self.assertTrue(agenda.week_label.get_label().endswith(
-                    org.format_date(start + dt.timedelta(days=4), with_year=True)))
+                self.assertEqual(agenda.week_label.get_label(),
+                                 f"{org.MONTH_NAMES[start.month - 1]} {start.year}")
             first.present()
             self.app.show_preferences()
             dialog = self.app.get_active_window().get_visible_dialog()

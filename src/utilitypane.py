@@ -49,13 +49,13 @@ class UtilityPane(Adw.Bin):
         self._context_menu = None
 
         self.calendar = Gtk.Calendar(show_week_numbers=True, margin_top=12,
-                                     margin_bottom=12, margin_start=12, margin_end=12)
+                                     margin_bottom=12, margin_start=12, margin_end=12,
+                                     css_classes=["utility-calendar"])
         self.calendar.connect("day-selected", self._on_day_selected)
         for signal in ("next-month", "prev-month", "next-year", "prev-year"):
             self.calendar.connect(signal, lambda *_: self.update_marks())
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.append(self.calendar)
-        content.append(Gtk.Separator())
         files_heading = Gtk.Box(spacing=6, margin_start=18, margin_end=12,
                                 margin_top=18, margin_bottom=6)
         files_heading.append(Gtk.Label(label="Files", xalign=0, hexpand=True,
@@ -73,6 +73,33 @@ class UtilityPane(Adw.Bin):
                                    css_classes=["navigation-sidebar", "utility-files"])
         css = Gtk.CssProvider()
         css.load_from_string("""
+            .utility-calendar { background: transparent; border: none; padding: 0; }
+            .utility-calendar header { background: transparent; border: none; }
+            .utility-calendar header button { min-width: 20px; min-height: 28px;
+                padding: 0; background: none; box-shadow: none; }
+            .utility-calendar header label { font-weight: bold; }
+            .utility-calendar grid { background: transparent; border: none; }
+            .utility-calendar .day-name { font-size: 0.85em; font-weight: bold;
+                color: alpha(@view_fg_color, 0.55); padding: 8px 0; }
+            .utility-calendar .day-number { font-weight: normal; padding: 0;
+                margin: 0;
+                min-width: 30px; min-height: 34px; border-radius: 0;
+                background: transparent; color: @view_fg_color; }
+            .utility-calendar .other-month { color: alpha(@view_fg_color, 0.4); }
+            .utility-calendar .week-number { font-size: 0.85em; font-weight: bold;
+                color: alpha(@view_fg_color, 0.55);
+                background: alpha(@view_fg_color, 0.06); border-radius: 6px;
+                margin: 4px 3px; padding: 0; }
+            .utility-calendar .selected-week { background: alpha(@view_fg_color, 0.08); }
+            .utility-calendar .week-start { border-radius: 8px 0 0 8px; }
+            .utility-calendar .week-end { border-radius: 0 8px 8px 0; }
+            .utility-calendar .day-number:checked {
+                font-weight: normal;
+                background-image: radial-gradient(circle at center 85%,
+                    currentColor 1px, transparent 1.5px); }
+            .utility-calendar .day-number.today { background-color: @accent_bg_color;
+                color: @accent_fg_color; border-radius: 999px; font-weight: bold; }
+            .utility-calendar .day-number:selected:not(.today) { color: @view_fg_color; }
             .file-action-label { font-weight: normal; }
             .utility-files row.current-document { background-color: alpha(black, 0.10); }
             .utility-files row.current-document:hover { background-color: alpha(black, 0.15); }
@@ -537,3 +564,28 @@ class UtilityPane(Adw.Bin):
                 entries, start, (end - start).days, dt.date.today()).items():
             if items:
                 self.calendar.mark_day(date.day)
+        self._style_calendar_week()
+
+    def _style_calendar_week(self):
+        # GTK exposes individual date cells, but not a week-selection style.
+        grid = self.calendar.get_last_child()
+        if not isinstance(grid, Gtk.Grid):
+            raise RuntimeError("GTK calendar date grid was not found")
+        selected_row = None
+        child = grid.get_first_child()
+        while child:
+            for name in ("selected-week", "week-start", "week-end"):
+                child.remove_css_class(name)
+            if child.has_css_class("day-number") and child.get_state_flags() & Gtk.StateFlags.SELECTED:
+                selected_row = grid.query_child(child)[1]
+            child = child.get_next_sibling()
+        view = self.window.active_view
+        if selected_row is None or getattr(view, "day_view", False):
+            return
+        for column in range(1, 8):
+            cell = grid.get_child_at(column, selected_row)
+            cell.add_css_class("selected-week")
+            if column == 1:
+                cell.add_css_class("week-start")
+            elif column == 7:
+                cell.add_css_class("week-end")

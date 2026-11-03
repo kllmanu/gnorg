@@ -341,12 +341,9 @@ class AgendaView(Adw.Bin):
             for date, items in org.build_agenda(entries, self.start, day_count, today).items()}
         visible_days = [(date, items) for date, items in self.days.items()
                         if self.weekly or not self.app.hide_weekends or date.weekday() < 5]
-        end = visible_days[-1][0]
         self.week_label.set_label(
             self.custom.title if self.headline_view else
-            org.format_date(self.start, with_year=True) if self.day_view else
-            f"{org.format_date(self.start, with_year=True)} – "
-            f"{org.format_date(end, with_year=True)}")
+            f"{org.MONTH_NAMES[self.start.month - 1]} {self.start.year}")
         folder_message = None
         if not files:
             reason = "does not exist" if not os.path.isdir(directory) else "has no .org files"

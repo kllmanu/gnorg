@@ -10,6 +10,7 @@ session may also appear, since open Org documents remain agenda sources.
 
 Click a filename below the mini-calendar to open it. Toggle its checkmark to
 include or exclude it from Agenda and Calendar.
+The mini-calendar highlights the selected week and marks event dates with dots.
 
 ** Inline formatting
 Try *bold*, /italic/, _underline_, +strikethrough+, =verbatim=, and ~code~.
