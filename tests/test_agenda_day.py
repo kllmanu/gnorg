@@ -5,10 +5,43 @@ from unittest.mock import patch
 
 from editor_test_case import EditorTestCase
 import org
-from vim import Gdk, GLib
+from vim import Gdk, GLib, Gtk
 
 
 class AgendaDayTests(EditorTestCase):
+    def test_mouse_side_buttons_navigate_agenda_day_week_and_calendar(self):
+        agenda = self.agenda()
+        window = agenda.window
+        self.app.show_agenda(window)
+        calendar = window.agenda
+        for view, day_mode in ((agenda, False), (agenda, True), (calendar, False)):
+            view.present()
+            if day_mode:
+                view.show_day()
+            start = view.start
+            controllers = view.observe_controllers()
+            clicks = {controller.get_button(): controller
+                      for i in range(controllers.get_n_items())
+                      if isinstance(controller := controllers.get_item(i), Gtk.GestureClick)}
+            self.assertEqual(set(clicks), {8, 9})
+            for button, direction in ((8, -1), (9, 1)):
+                click = clicks[button]
+                self.assertEqual(click.get_propagation_phase(), Gtk.PropagationPhase.CAPTURE)
+                with patch.object(click, "set_state") as claim:
+                    click.emit("pressed", 1, 0, 0)
+                    claim.assert_called_once_with(Gtk.EventSequenceState.CLAIMED)
+                start += dt.timedelta(days=(1 if day_mode else 7) * direction)
+                self.assertEqual(view.start, start)
+        from customagenda import CustomAgenda
+        agenda.set_custom(CustomAgenda("h", "Headlines"))
+        with patch.object(agenda, "shift") as shift:
+            agenda._on_navigation_pressed(clicks[8], -1)
+            shift.assert_not_called()
+        with patch.object(window.heading_search, "get_visible", return_value=True), patch.object(
+                calendar, "shift") as shift:
+            calendar._on_navigation_pressed(clicks[9], 1)
+            shift.assert_not_called()
+
     def test_month_shortcut_is_unbound_in_day_and_week_agenda(self):
         agenda = self.agenda()
         start = agenda.start

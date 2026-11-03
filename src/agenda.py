@@ -257,6 +257,12 @@ class AgendaView(Adw.Bin):
         content.append(footer)
         self.toasts = Adw.ToastOverlay(child=content)
         self.set_child(self.toasts)
+        for button, direction in ((8, -1), (9, 1)):
+            click = Gtk.GestureClick(
+                button=button, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+            click.connect("pressed", lambda gesture, _count, _x, _y, delta=direction:
+                          self._on_navigation_pressed(gesture, delta))
+            self.add_controller(click)
 
         for name, callback in (
                 ("new", lambda: self.window.new_tab().present()),
@@ -663,6 +669,13 @@ class AgendaView(Adw.Bin):
         self.start += dt.timedelta(days=(1 if self.day_view else 7) * direction)
         self._sync_calendar()
         self.refresh()
+
+    def _on_navigation_pressed(self, gesture, direction):
+        if (self.headline_view or self.window.heading_search.get_visible()
+                or self.window.get_visible_dialog() is not None):
+            return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self.shift(direction)
 
     def _sync_calendar(self):
         if self.headline_view:

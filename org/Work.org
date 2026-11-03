@@ -45,6 +45,8 @@ Use Tab to cycle folding, or Shift+Tab for the whole document.
 - In Agenda: d for one day, w for the week, f/b to navigate,
   . for the current day or week.
 - Calendar shows a week; f/b navigate weeks and . returns to the current week.
+- In Agenda or Calendar: mouse button 8 goes back and button 9 goes forward
+  by the current day/week span.
 - In Files, Agenda, or Calendar: click the search icon or press Ctrl+f to search
   all Org headings by title, TODO keyword, tags/location, category, or file path.
   Search includes undated headings, hidden agenda files, and unsaved open buffers.
