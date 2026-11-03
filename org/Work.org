@@ -42,6 +42,8 @@ Use Tab to cycle folding, or Shift+Tab for the whole document.
 - Alt+Left / Alt+Right: promote or demote a subtree.
 - Ctrl+Alt+e: open the current saved file at the cursor in Emacs.
 - In Agenda: d for one day, w for the week, f/b to navigate, . for today.
+- In Agenda or Calendar: C-x C-s saves all modified files without leaving the view.
+- In Agenda: click an item to select it, then click it again to open its headline.
 - C-c a opens the agenda chooser; then a opens the built-in Agenda.
 
 ** Custom agendas :demo:

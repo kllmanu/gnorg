@@ -1162,13 +1162,13 @@ class EditorTab(Adw.Bin):
 
         process.communicate_utf8_async(None, None, finished)
 
-    def save(self, then=None, on_cancel=None):
+    def save(self, then=None, on_cancel=None, notify=None):
         if self.file is None:
-            self.save_as(then=then, on_cancel=on_cancel)
+            self.save_as(then=then, on_cancel=on_cancel, notify=notify)
         else:
-            self.save_to(self.file, then=then, on_cancel=on_cancel)
+            self.save_to(self.file, then=then, on_cancel=on_cancel, notify=notify)
 
-    def save_as(self, then=None, on_cancel=None):
+    def save_as(self, then=None, on_cancel=None, notify=None):
         dialog = Gtk.FileDialog(title="Save File", filters=file_filters())
         if self.file:
             dialog.set_initial_file(self.file)
@@ -1185,11 +1185,12 @@ class EditorTab(Adw.Bin):
                 if on_cancel:
                     on_cancel()
                 return
-            self.save_to(file, then=then, on_cancel=on_cancel)
+            self.save_to(file, then=then, on_cancel=on_cancel, notify=notify)
 
         dialog.save(self.window, None, on_done)
 
-    def save_to(self, file, then=None, on_cancel=None):
+    def save_to(self, file, then=None, on_cancel=None, notify=None):
+        notify = notify if notify is not None else self.toast
         self._flush_escape_prefix()
         self._update_progress()
         if self.file is None or not self.file.equal(file):
@@ -1197,7 +1198,7 @@ class EditorTab(Adw.Bin):
             if parent:
                 destination = parent.get_child(org_filename(file.get_basename()))
                 if not destination.equal(file) and destination.query_exists(None):
-                    self.toast(f"“{destination.get_basename()}” already exists. "
+                    notify(f"“{destination.get_basename()}” already exists. "
                                "Choose that file explicitly to replace it.")
                     if on_cancel:
                         on_cancel()
@@ -1217,7 +1218,7 @@ class EditorTab(Adw.Bin):
             try:
                 f.replace_contents_finish(res)
             except GLib.Error as e:
-                self.toast(f"Could not save file: {e.message}")
+                notify(f"Could not save file: {e.message}")
                 if on_cancel:
                     on_cancel()
                 if self._file_monitor:
@@ -1232,7 +1233,7 @@ class EditorTab(Adw.Bin):
             self.setup_auto_revert(check=True)
             self.get_application().remember_file(f)
             self._update_title()
-            self.toast(f"“{f.get_basename()}” written, {len(data)} bytes")
+            notify(f"“{f.get_basename()}” written, {len(data)} bytes")
             self.get_application().queue_agenda_refresh()
             if then:
                 then()

@@ -10,7 +10,7 @@ Only direct child tasks count; nested tasks belong to their own parent.
 CLOSED: [2026-11-02 Mon 09:00]
 
 ** TODO Review the editor :testing:
-SCHEDULED: <2026-11-02 Mon 10:00 +1w>
+SCHEDULED: <2026-11-09 Mon 10:00 +1w>
 Click the timestamp to edit its date and optional time range.
 
 *** TODO Check a nested task

@@ -268,6 +268,8 @@ class CustomAgendaTests(EditorTestCase):
             item, button = agenda.entry_buttons[0]
             with patch.object(self.app, "open_location") as opened:
                 button.emit("clicked")
+                opened.assert_not_called()
+                button.emit("clicked")
                 opened.assert_called_once_with("/org/tasks.org", 0)
             agenda.selected_item = item
             with patch.object(self.app, "edit_entry", return_value=None) as edit:

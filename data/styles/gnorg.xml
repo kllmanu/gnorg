@@ -9,6 +9,7 @@
   <color name="teal" value="#1f8a8a"/>
   <color name="brown" value="#865e3c"/>
   <color name="red" value="#c01c28"/>
+  <color name="yellow" value="#8a6103"/>
   <color name="grey" value="#77767b"/>
   <color name="link" value="#1c71d8"/>
 
@@ -46,9 +47,11 @@
   <style name="org:agenda-date-weekend" foreground="blue" bold="true"/>
   <style name="org:agenda-date-today" foreground="blue" bold="true" italic="true"/>
   <style name="org:agenda-separator" foreground="grey"/>
-  <style name="org:agenda-done" foreground="grey"/>
-  <style name="org:scheduled" foreground="green"/>
-  <style name="org:scheduled-previously" foreground="orange"/>
+  <style name="org:agenda-done" foreground="green"/>
+  <style name="org:agenda-deadline" foreground="red"/>
+  <style name="org:agenda-scheduled" foreground="yellow"/>
+  <style name="org:scheduled" foreground="yellow"/>
+  <style name="org:scheduled-previously" foreground="yellow"/>
   <style name="org:deadline" foreground="red" bold="true"/>
-  <style name="org:upcoming-deadline" foreground="orange"/>
+  <style name="org:upcoming-deadline" foreground="red"/>
 </style-scheme>

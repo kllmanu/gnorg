@@ -11,6 +11,144 @@ from vim import Adw
 
 
 class AgendaTests(EditorTestCase):
+    def test_agenda_clicks_select_before_opening_even_when_focus_selects_first(self):
+        import datetime as dt
+        import org
+
+        self.app.show_weekly_agenda()
+        agenda = self.app.editor_windows()[0].weekly_agenda
+        date = dt.date.today()
+        entries = org.parse_entries(
+            f"* First\n<{date}>\n* Second\n<{date}>\n", "/org/events.org")
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/events.org"], entries)):
+            agenda.refresh()
+        first, first_button = agenda.entry_buttons[0]
+        second, second_button = agenda.entry_buttons[1]
+        with patch.object(self.app, "open_location") as open_location:
+            first_button.emit("clicked")
+            open_location.assert_not_called()
+            self.assertEqual(agenda.selected_item, first)
+            self.assertTrue(first_button.has_css_class("agenda-cursor"))
+            agenda._select(second)
+            second_button.emit("clicked")
+            open_location.assert_not_called()
+            self.assertTrue(second_button.has_css_class("agenda-cursor"))
+            self.assertFalse(first_button.has_css_class("agenda-cursor"))
+            agenda._select(first)
+            first_button.emit("clicked")
+            open_location.assert_not_called()
+            first_button.emit("clicked")
+            open_location.assert_called_once_with("/org/events.org", first.timestamp_line)
+            open_location.reset_mock()
+            second_button.emit("clicked")
+            open_location.assert_not_called()
+            agenda.open_entry()
+            open_location.assert_called_once_with("/org/events.org", second.timestamp_line)
+
+    def test_save_key_sequence_saves_all_files_across_windows_in_agenda_and_calendar(self):
+        import datetime as dt
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [os.path.join(directory, name) for name in ("first.org", "second.org")]
+            original = f"* TODO Event\n<{dt.date.today().isoformat()}>\n"
+            for path in paths:
+                with open(path, "w") as stream:
+                    stream.write(original)
+            first = self.app.open_file(Gio.File.new_for_path(paths[0]))
+            self.wait_for(lambda: first.get_text() == original)
+            second = self.app.open_file(Gio.File.new_for_path(paths[1]))
+            self.wait_for(lambda: second.get_text() == original)
+            first.buffer.set_text(original.replace("TODO Event", "DONE Selected"))
+            second.buffer.set_text(original.replace("TODO Event", "TODO Other"))
+            third = self.app.new_window().new_tab()
+            third.file = Gio.File.new_for_path(os.path.join(directory, "third.org"))
+            third.buffer.set_text("* TODO Other window\n")
+            with patch.object(self.app, "agenda_directory", return_value=directory):
+                for show, name in ((self.app.show_weekly_agenda, "weekly_agenda"),
+                                   (self.app.show_agenda, "agenda")):
+                    for tab in (first, second, third):
+                        tab.buffer.set_modified(True)
+                    show(second.window)
+                    agenda = getattr(second.window, name)
+                    agenda.selected_item = None
+                    with patch.object(agenda, "toast") as toast:
+                        for key in (Gdk.KEY_x, Gdk.KEY_s):
+                            self.assertTrue(second.window._on_key_pressed(
+                                None, key, 0, Gdk.ModifierType.CONTROL_MASK))
+                        self.wait_for(lambda: all(
+                            not tab.buffer.get_modified() for tab in (first, second, third)))
+                        messages = [call.args[0] for call in toast.call_args_list]
+                        self.assertEqual(len(messages), 3)
+                        self.assertTrue(all("written" in message for message in messages))
+                    self.assertIs(second.window.active_view, agenda)
+                with open(paths[0]) as stream:
+                    self.assertIn("DONE Selected", stream.read())
+                with open(paths[1]) as stream:
+                    self.assertIn("TODO Other", stream.read())
+                with open(third.path) as stream:
+                    self.assertEqual(stream.read(), "* TODO Other window\n")
+
+    def test_save_all_reports_no_unsaved_changes_without_requiring_selection(self):
+        import datetime as dt
+        import org
+
+        self.app.show_weekly_agenda()
+        agenda = self.app.editor_windows()[0].weekly_agenda
+        with patch.object(agenda, "toast") as toast:
+            agenda.selected_item = None
+            agenda.save()
+            toast.assert_called_once_with("No unsaved changes.")
+            entries = org.parse_entries(
+                f"* Event\n<{dt.date.today().isoformat()}>\n", "/org/closed.org")
+            agenda.selected_item = org.build_agenda(
+                entries, dt.date.today(), 1, dt.date.today())[dt.date.today()][0]
+            agenda.save()
+            self.assertIn("No unsaved changes", toast.call_args.args[0])
+
+    def test_save_all_prompts_for_untitled_and_continues_after_cancellation(self):
+        untitled = self.app.new_tab()
+        untitled.buffer.set_text("* Unsaved\n")
+        other = self.app.new_tab()
+        other.file = Gio.File.new_for_path("/org/other.org")
+        other.buffer.set_text("* Changed\n")
+        self.app.show_weekly_agenda(other.window)
+        agenda = other.window.weekly_agenda
+        with patch.object(untitled, "save_as") as save_as, patch.object(other, "save") as save:
+            agenda.save()
+            save_as.assert_called_once()
+            self.assertEqual(save_as.call_args.kwargs["notify"], agenda.toast)
+            save.assert_not_called()
+            save_as.call_args.kwargs["on_cancel"]()
+            save.assert_called_once()
+            self.assertEqual(save.call_args.kwargs["notify"], agenda.toast)
+
+    def test_agenda_save_failure_is_reported_in_agenda_and_keeps_unsaved_edits(self):
+        import datetime as dt
+        import org
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "missing", "event.org")
+            tab = self.app.new_tab()
+            tab.file = Gio.File.new_for_path(path)
+            text = f"* TODO Event\n<{dt.date.today().isoformat()}>\n"
+            tab.buffer.set_text(text)
+            other = tab.window.new_tab()
+            other.file = Gio.File.new_for_path(os.path.join(directory, "other.org"))
+            other.buffer.set_text("* Saved after failure\n")
+            self.app.show_weekly_agenda(tab.window)
+            agenda = tab.window.weekly_agenda
+            entry = org.parse_entries(text, path)[0]
+            agenda.selected_item = org.build_agenda(
+                [entry], dt.date.today(), 1, dt.date.today())[dt.date.today()][0]
+            with patch.object(agenda, "toast") as toast:
+                agenda.actions.lookup_action("save").activate(None)
+                self.wait_for(lambda: toast.called)
+                self.assertIn("Could not save file:", toast.call_args_list[0].args[0])
+                self.wait_for(lambda: not other.buffer.get_modified())
+            self.assertTrue(tab.buffer.get_modified())
+            self.assertIs(tab.window.active_view, agenda)
+
     def test_agenda_tags_align_to_right_after_window_resize(self):
         import datetime as dt
         import org
@@ -108,7 +246,7 @@ class AgendaTests(EditorTestCase):
         self.assertFalse(tab.window.tabs.get_mapped())
         self.assertEqual(len(agenda.days), 7)
         self.assertEqual(len(self.app.editor_tabs()), 1)
-        self.assertIsNone(agenda.window.lookup_action("save"))
+        self.assertIs(agenda.window.lookup_action("save"), agenda.actions.lookup_action("save"))
         self.app.show_agenda()
         self.assertIs(self.app.agenda, agenda)
         self.assertEqual(agenda.window.tabs.get_n_pages(), 1)
@@ -259,6 +397,9 @@ class AgendaTests(EditorTestCase):
                                 if item.entry.display_title == "Scheduled task")
             with patch.object(self.app, "open_location") as open_location:
                 button.emit("clicked")
+                open_location.assert_not_called()
+                self.assertEqual(agenda.selected_item, item)
+                button.emit("clicked")
                 open_location.assert_called_once_with("/org/test.org", 0)
             agenda.selected_item = item
             agenda.shift(1)
@@ -369,6 +510,83 @@ class AgendaTests(EditorTestCase):
                     weight = weight_attribute.as_int().value
                     self.assertEqual(weight, Pango.Weight.BOLD)
                 self.assertNotEqual(colors["TODO"], colors["DONE"])
+
+    def test_agenda_colors_entire_rows_and_split_tags_in_light_and_dark_themes(self):
+        import datetime as dt
+        import org
+        from gi.repository import GtkSource, Pango
+
+        self.app.show_weekly_agenda()
+        agenda = self.app.editor_windows()[0].weekly_agenda
+        day = agenda.start + dt.timedelta(days=2)
+        yesterday = day - dt.timedelta(days=1)
+        forecast = day + dt.timedelta(days=3)
+        entries = org.parse_entries(
+            f"* TODO [#A] Scheduled café :work:@U328:\nSCHEDULED: <{day} 09:00>\n"
+            f"* TODO Previously scheduled :work:\nSCHEDULED: <{yesterday}>\n"
+            f"* TODO Deadline résumé :required:\nDEADLINE: <{day} 10:00>\n"
+            f"* TODO Overdue :required:\nDEADLINE: <{yesterday}>\n"
+            f"* TODO Forecast :required:\nDEADLINE: <{forecast}>\n"
+            f"* DONE Finished deadline :work:\nDEADLINE: <{day}>\n"
+            f"* DONE Finished scheduled :work:\nSCHEDULED: <{day}>\n"
+            f"* DONE Finished event :work:\n<{day}>\n"
+            f"* DONE Body event :work:\n<{day}> Adjacent title\n"
+            f"* DONE Without tags\nDEADLINE: <{day}>\n", "/org/test.org")
+        manager = Adw.StyleManager.get_default()
+
+        class Today(dt.date):
+            @classmethod
+            def today(cls):
+                return day
+
+        with patch.object(self.app, "agenda_entries",
+                          return_value=("/org", ["/org/test.org"], entries)), patch(
+                              "agenda.dt.date", Today):
+            for dark, scheme_name in ((False, "gnorg"), (True, "gnorg-dark")):
+                with patch.object(manager, "get_dark", return_value=dark):
+                    agenda.refresh()
+                scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(scheme_name)
+
+                def color_for(style):
+                    color = Gdk.RGBA()
+                    self.assertTrue(color.parse(scheme.get_style(f"org:{style}").props.foreground))
+                    return tuple(round(value * 65535)
+                                 for value in (color.red, color.green, color.blue))
+
+                kinds = set()
+                for item, button in agenda.entry_buttons:
+                    kinds.add(item.kind)
+                    row_style = ("agenda-done" if item.entry.is_done else
+                                 "agenda-deadline" if item.kind.startswith("deadline") else
+                                 "agenda-scheduled")
+                    content = button.get_child()
+                    labels = ([content.get_first_child(), content.get_last_child()]
+                              if isinstance(content, Gtk.Box) else [content])
+                    for label in labels:
+                        text = label.get_text()
+                        attributes = label.get_attributes()
+                        iterator = attributes.get_iterator()
+                        keyword_start = (text.find(item.entry.keyword)
+                                         if label is labels[0] and item.timestamp_title is None
+                                         else -1)
+                        for index, character in enumerate(text):
+                            if character.isspace():
+                                continue
+                            byte_index = len(text[:index].encode("utf-8"))
+                            while iterator.range()[1] <= byte_index:
+                                self.assertTrue(iterator.next())
+                            foreground = iterator.get(Pango.AttrType.FOREGROUND)
+                            color = foreground.as_color().color
+                            style = ("tag" if label is not labels[0] else
+                                     "todo" if item.entry.keyword == "TODO"
+                                     and keyword_start <= index < keyword_start + 4
+                                     and keyword_start >= 0 else row_style)
+                            self.assertEqual(
+                                (color.red, color.green, color.blue), color_for(style),
+                                (scheme_name, item.kind, text, index))
+                self.assertTrue({
+                    "scheduled", "scheduled-overdue", "deadline", "deadline-overdue",
+                    "deadline-upcoming", "timestamp"} <= kinds)
 
     def test_agenda_highlights_today_and_updates_now_marker(self):
         import datetime as dt

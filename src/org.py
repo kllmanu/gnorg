@@ -923,7 +923,6 @@ def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AG
     if leader:
         spans.append((len(text), len(text) + len(leader.rstrip()), leader_style))
         text += leader + " "
-    title_start = len(text)
     if entry.keyword and timestamp_title is None:
         style = "done" if entry.is_done else "todo"
         spans.append((len(text), len(text) + len(entry.keyword), style))
@@ -932,13 +931,17 @@ def agenda_item_line(entry, leader="", leader_style=None, time_text="", width=AG
         spans.append((len(text), len(text) + 4, "priority"))
         text += f"[#{entry.priority}] "
     text += timestamp_title if timestamp_title is not None else entry.display_title
-    if entry.is_done and timestamp_title is None:
-        spans.append((title_start, len(text), "agenda-done"))
     if entry.tags:
         tags = ":" + ":".join(entry.tags) + ":"
         text += " " * max(1, width - len(text) - len(tags))
         spans.append((len(text), len(text) + len(tags), "tag"))
         text += tags
+    row_style = ("agenda-done" if entry.is_done else
+                 "agenda-deadline" if leader_style in ("deadline", "upcoming-deadline") else
+                 "agenda-scheduled" if leader_style in ("scheduled", "scheduled-previously") else
+                 None)
+    if row_style:
+        spans.append((0, len(text), row_style))
     return AgendaLine(text, "item", entry, spans=spans)
 
 

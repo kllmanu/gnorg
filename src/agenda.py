@@ -2,6 +2,8 @@
 
 Agenda: d selects a day, w restores the week, f/b move by the current span,
 and . returns to today. Day selection follows the entry or mini-calendar.
+Deadlines are red, scheduled rows yellow, and completed rows green.
+Tags retain their grey color in every agenda row.
 Calendar: finished events are faded; heading tags beginning with @ are locations.
 """
 
@@ -101,6 +103,7 @@ class AgendaView(Adw.Bin):
         self.days = {}
         self.entry_buttons = []
         self.selected_item = None
+        self._clicked_item = None
         self.file_color_css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), self.file_color_css,
@@ -214,6 +217,7 @@ class AgendaView(Adw.Bin):
         for name, callback in (
                 ("new", lambda: self.window.new_tab().present()),
                 ("close", self.close), ("reopen", self.window.reopen_tab),
+                ("save", self.save),
                 ("open", self._find_file)):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", lambda _a, _p, cb=callback: cb())
@@ -227,6 +231,7 @@ class AgendaView(Adw.Bin):
             "C-c f": self.window.show_files,
             "C-x C-c": lambda: self.app.activate_action("quit", None),
             "C-x C-f": self._find_file,
+            "C-x C-s": self.save,
             "C-x b": self.app.show_buffers,
             "C-g": self._keyboard_quit,
         })
@@ -452,7 +457,9 @@ class AgendaView(Adw.Bin):
                 tags = Gtk.Label(label=line.text[start:end], xalign=1,
                                  css_classes=["monospace"], margin_end=2)
                 tag_line = org.AgendaLine(
-                    line.text[start:end], spans=[(0, end - start, "tag")])
+                    line.text[start:end], spans=[
+                        (max(a, start) - start, min(b, end) - start, style)
+                        for a, b, style in line.spans if a < end and b > start])
                 tags.set_attributes(self._line_attributes(tag_line))
                 content = Gtk.Box(spacing=16)
                 content.append(label)
@@ -460,7 +467,7 @@ class AgendaView(Adw.Bin):
             if line.kind == "item":
                 item = next(items)
                 button = Gtk.Button(child=content, css_classes=["flat"])
-                button.connect("clicked", lambda _button, event=item: self._open_item(event))
+                button.connect("clicked", lambda _button, event=item: self._click_item(event))
                 button.connect("notify::has-focus", lambda widget, *_args, event=item:
                                self._select(event) if widget.has_focus() else None)
                 self.listbox.append(button)
@@ -491,8 +498,8 @@ class AgendaView(Adw.Bin):
         attributes = Pango.AttrList()
         if scheme is None:
             return attributes
-        # Dim completed titles before applying the keyword's own green style.
-        spans = sorted(line.spans, key=lambda span: span[2] != "agenda-done")
+        # Keywords and tags keep their own faces over full-row colors.
+        spans = sorted(line.spans, key=lambda span: span[2] in ("todo", "done", "tag"))
         for start, end, name in spans:
             style = scheme.get_style(f"org:{name}")
             if style is None:
@@ -588,6 +595,8 @@ class AgendaView(Adw.Bin):
         return GLib.SOURCE_CONTINUE
 
     def _select(self, item):
+        if self._clicked_item != item:
+            self._clicked_item = None
         self.selected_item = item
         if self.weekly:
             for event, button in self.entry_buttons:
@@ -595,6 +604,14 @@ class AgendaView(Adw.Bin):
                     button.add_css_class("agenda-cursor")
                 else:
                     button.remove_css_class("agenda-cursor")
+
+    def _click_item(self, item):
+        if self._clicked_item == item and self.selected_item == item:
+            self._clicked_item = None
+            self._open_item(item)
+        else:
+            self._select(item)
+            self._clicked_item = item
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):
         if state & Gtk.accelerator_get_default_mod_mask():
@@ -679,6 +696,20 @@ class AgendaView(Adw.Bin):
     def open_entry(self):
         if self.selected_item:
             self._open_item(self.selected_item)
+
+    def save(self):
+        tabs = [tab for tab in self.app.editor_tabs() if tab.buffer.get_modified()]
+        if not tabs:
+            self.toast("No unsaved changes.")
+            return
+        pending = iter(tabs)
+
+        def save_next():
+            tab = next(pending, None)
+            if tab is not None:
+                tab.save(then=save_next, on_cancel=save_next, notify=self.toast)
+
+        save_next()
 
     def cycle_todo(self):
         if self.selected_item is None:

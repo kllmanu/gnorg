@@ -336,8 +336,9 @@ class AgendaTests(unittest.TestCase):
             "test:       17:00...... DONE [#A] Other stuff",
         ])
         self.assertTrue(all(line.entry is entries[0] for line in lines))
-        self.assertFalse(any(style in ("done", "priority", "agenda-done")
+        self.assertFalse(any(style in ("done", "priority")
                              for line in lines[:2] for _, _, style in line.spans))
+        self.assertTrue(all((0, len(line.text), "agenda-done") in line.spans for line in lines))
 
     def test_week(self):
         entries = org.parse_entries(DOC, "test.org")
