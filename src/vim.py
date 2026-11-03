@@ -19,6 +19,7 @@ from datepicker import DatePopover  # noqa: E402
 from keybindings import OrgKeySequences  # noqa: E402
 from indent import OrgFold, OrgIndent, OrgLineNumbers, OrgStartupEdit, OrgTagAlign, OrgTodoInteraction  # noqa: E402
 from bufferpicker import BufferPicker  # noqa: E402
+from headingsearch import HeadingSearch  # noqa: E402
 from customagenda import AgendaChooser, AgendaEditor, decode_views, encode_views  # noqa: E402
 from utilitypane import UtilityPane, file_color, file_order_key, org_filename  # noqa: E402
 
@@ -1308,6 +1309,7 @@ class EditorWindow(Adw.ApplicationWindow):
         self.toolbar_view = Adw.ToolbarView(content=self.stack)
         self.toolbar_view.add_bottom_bar(self.switcher_bar)
         self._header = None
+        self.heading_search = HeadingSearch(self)
         self._title_bindings = []
         self.split_view = Adw.OverlaySplitView(
             content=self.toolbar_view, show_sidebar=True,
@@ -1337,8 +1339,25 @@ class EditorWindow(Adw.ApplicationWindow):
         header.pack_start(button)
         header.sidebar_toggle = button
 
+    def add_search_button(self, header):
+        search = Gtk.Button(icon_name="system-search-symbolic", tooltip_text="Search headings (Ctrl+F)",
+                            css_classes=["flat"])
+        search.connect("clicked", lambda *_: self.heading_search.show(search))
+        header.pack_end(search)
+        header.search_button = search
+
     def _on_key_pressed(self, controller, keyval, keycode, state):
         if self.get_visible_dialog() is not None:
+            return False
+        modifiers = state & Gtk.accelerator_get_default_mod_mask()
+        if keyval == Gdk.KEY_f and modifiers == Gdk.ModifierType.CONTROL_MASK:
+            if self._header is not None:
+                self.heading_search.show(self._header.search_button)
+            return True
+        if self.heading_search.get_visible():
+            if keyval == Gdk.KEY_Escape:
+                self.heading_search.popdown()
+                return True
             return False
         tab = self.active_view
         if isinstance(tab, EditorTab) and self.get_focus() is tab.view:
@@ -1445,12 +1464,15 @@ class EditorWindow(Adw.ApplicationWindow):
         if tab is None:
             return
         if self._header is not tab.header:
+            self.heading_search.popdown()
             if self._header is not None:
                 for binding in self._title_bindings:
                     binding.unbind()
                 self._header.set_title_widget(None)
                 self.toolbar_view.remove(self._header)
             self._header = tab.header
+            if not hasattr(self._header, "search_button"):
+                self.add_search_button(self._header)
             self._header.set_title_widget(self.view_switcher)
             self._title_bindings = [
                 tab.title_widget.bind_property(

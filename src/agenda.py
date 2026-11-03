@@ -41,6 +41,41 @@ def show_zoom_toast(view, zoom):
     view.toasts.add_toast(view._zoom_toast)
 
 
+def agenda_line_attributes(line):
+    dark = Adw.StyleManager.get_default().get_dark()
+    scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(
+        "gnorg-dark" if dark else "gnorg")
+    attributes = Pango.AttrList()
+    if scheme is None:
+        return attributes
+    # Keywords and tags keep their own faces over full-row colors.
+    spans = sorted(line.spans, key=lambda span: span[2] in ("todo", "done", "tag"))
+    for start, end, name in spans:
+        style = scheme.get_style(f"org:{name}")
+        if style is None:
+            continue
+        values = []
+        if style.props.foreground_set:
+            color = Gdk.RGBA()
+            if color.parse(style.props.foreground):
+                values.append(Pango.attr_foreground_new(
+                    round(color.red * 65535), round(color.green * 65535),
+                    round(color.blue * 65535)))
+        if style.props.bold_set:
+            values.append(Pango.attr_weight_new(
+                Pango.Weight.BOLD if style.props.bold else Pango.Weight.NORMAL))
+        if style.props.italic_set:
+            values.append(Pango.attr_style_new(
+                Pango.Style.ITALIC if style.props.italic else Pango.Style.NORMAL))
+        if style.props.underline_set:
+            values.append(Pango.attr_underline_new(style.props.pango_underline))
+        for value in values:
+            value.start_index = len(line.text[:start].encode("utf-8"))
+            value.end_index = len(line.text[:end].encode("utf-8"))
+            attributes.change(value)
+    return attributes
+
+
 def event_minutes(item):
     start = item.ts.time.hour * 60 + item.ts.time.minute
     end = (item.ts.end_time.hour * 60 + item.ts.end_time.minute
@@ -498,38 +533,7 @@ class AgendaView(Adw.Bin):
             (selected_button or self.view).grab_focus()
 
     def _line_attributes(self, line):
-        dark = Adw.StyleManager.get_default().get_dark()
-        scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(
-            "gnorg-dark" if dark else "gnorg")
-        attributes = Pango.AttrList()
-        if scheme is None:
-            return attributes
-        # Keywords and tags keep their own faces over full-row colors.
-        spans = sorted(line.spans, key=lambda span: span[2] in ("todo", "done", "tag"))
-        for start, end, name in spans:
-            style = scheme.get_style(f"org:{name}")
-            if style is None:
-                continue
-            values = []
-            if style.props.foreground_set:
-                color = Gdk.RGBA()
-                if color.parse(style.props.foreground):
-                    values.append(Pango.attr_foreground_new(
-                        round(color.red * 65535), round(color.green * 65535),
-                        round(color.blue * 65535)))
-            if style.props.bold_set:
-                values.append(Pango.attr_weight_new(
-                    Pango.Weight.BOLD if style.props.bold else Pango.Weight.NORMAL))
-            if style.props.italic_set:
-                values.append(Pango.attr_style_new(
-                    Pango.Style.ITALIC if style.props.italic else Pango.Style.NORMAL))
-            if style.props.underline_set:
-                values.append(Pango.attr_underline_new(style.props.pango_underline))
-            for value in values:
-                value.start_index = len(line.text[:start].encode("utf-8"))
-                value.end_index = len(line.text[:end].encode("utf-8"))
-                attributes.change(value)
-        return attributes
+        return agenda_line_attributes(line)
 
     def _entry_button(self, item):
         entry = item.entry

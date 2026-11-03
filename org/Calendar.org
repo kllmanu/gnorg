@@ -7,7 +7,7 @@ These repeating timestamps populate future weeks too.
 Calendar shows active timestamps; scheduled tasks and deadlines are in Agenda.
 Tags beginning with @ are shown as locations below calendar event titles.
 
-** Team planning :work:@U328:
+** TODO Team planning :work:@U328:
 <2026-11-02 Mon 09:00-10:00 +1w>
 
 ** Design review :work:@U407:
