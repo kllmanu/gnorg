@@ -4,10 +4,31 @@ import re
 
 from editor_test_case import EditorTestCase
 import org
-from vim import Gdk
+from vim import Gdk, GtkSource, Pango
 
 
 class ProgressTests(EditorTestCase):
+    def test_done_heading_cookies_keep_progress_colors_in_both_themes(self):
+        tab = self.app.new_tab()
+        text = "* DONE Project [/] [%] [1/3] [33%] [3/3] [100%]\n"
+        tab.buffer.set_text(text)
+        for scheme_id in ("gnorg", "gnorg-dark"):
+            scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(scheme_id)
+            tab.buffer.set_style_scheme(scheme)
+            tab.buffer.ensure_highlight(*tab.buffer.get_bounds())
+            tab._highlight_progress()
+            for match in org.PROGRESS_RE.finditer(text):
+                iterator = tab.buffer.get_iter_at_offset(match.start())
+                tags = sorted(iterator.get_tags(), key=lambda tag: tag.get_priority())
+                foreground = [tag.props.foreground_rgba for tag in tags if tag.props.foreground_set][-1]
+                weight = [tag.props.weight for tag in tags if tag.props.weight_set][-1]
+                style = "org:done" if match[0] in ("[3/3]", "[100%]") else "org:checkbox"
+                expected = Gdk.RGBA()
+                expected.parse(scheme.get_style(style).props.foreground)
+                self.assertEqual(foreground.to_string(), expected.to_string(), (scheme_id, match[0]))
+                self.assertEqual(weight, Pango.Weight.BOLD)
+        self.assertEqual(tab.get_text(), text)
+
     def test_completed_cookies_use_green_done_style_in_headings_and_lists(self):
         tab = self.app.new_tab()
         text = "* Project [3/3] [100%] [2/3] [0/0]\n- [ ] Items [12/12] [100%] [50%]\n"

@@ -2,10 +2,37 @@
 
 from editor_test_case import EditorTestCase
 from unittest.mock import Mock
-from vim import Gdk, Gtk
+from vim import Gdk, Graphene, Gtk
 
 
 class StartupTests(EditorTestCase):
+    def test_edit_popovers_point_to_line_end_without_moving_cursor(self):
+        tab = self.app.new_tab()
+        tab.buffer.set_text("#+STARTUP: showall\n* TODO Heading\n"
+                            "SCHEDULED: <2026-11-04> extra text\n"
+                            "<2026-11-05> trailing text\n")
+        tab.present()
+        self.wait_for(lambda: 0 in tab.org_startup_edit.buttons)
+        for line, open_popover, attribute in (
+                (0, lambda: tab.edit_startup(0, tab.org_startup_edit.buttons[0]),
+                 "_active_startup_popover"),
+                (1, tab.edit_tags, "_active_tag_popover"),
+                (2, lambda: tab.edit_planning("SCHEDULED"), "_active_date_popover"),
+                (3, tab.insert_timestamp, "_active_date_popover")):
+            iterator = tab.buffer.get_iter_at_line(line)[1]
+            tab.buffer.place_cursor(iterator)
+            end = iterator.copy()
+            end.forward_to_line_end()
+            location = tab.view.get_iter_location(end)
+            x, y = tab.view.buffer_to_window_coords(
+                Gtk.TextWindowType.WIDGET, location.x, location.y)
+            _ok, point = tab.view.compute_point(tab.editor_box, Graphene.Point().init(x, y))
+            open_popover()
+            _ok, anchor = getattr(tab, attribute).get_pointing_to()
+            self.assertAlmostEqual(anchor.x, point.x, delta=1)
+            self.assertAlmostEqual(anchor.y, point.y, delta=1)
+            self.assertEqual(tab.buffer.get_iter_at_mark(tab.buffer.get_insert()).get_line_offset(), 0)
+            tab._keyboard_quit()
     def test_startup_text_click_and_control_c_control_c_open_same_popover(self):
         tab = self.app.new_tab()
         tab.buffer.set_text("#+STARTUP: overview\n* Heading\nBody\n")
@@ -57,6 +84,7 @@ class StartupTests(EditorTestCase):
         button = editor.buttons[0]
         self.assertEqual(button.get_opacity(), 0)
         self.assertFalse(button.get_can_target())
+        self.wait_for(lambda: 0 in editor._regions)
         left, top, right, bottom = editor._regions[0]
         editor._motion(None, left + 1, (top + bottom) / 2)
         self.assertEqual(tab.view.get_cursor().get_name(), "pointer")

@@ -560,12 +560,7 @@ class EditorTab(Adw.Bin):
         box.append(buttons)
         popover.set_child(box)
         popover.set_parent(self.editor_box)
-        anchor = self._cursor_rect()
-        if button is not None:
-            _ok, bounds = button.compute_bounds(self.editor_box)
-            anchor.x, anchor.y = int(bounds.get_x()), int(bounds.get_y())
-            anchor.width, anchor.height = max(button.get_width(), 1), max(button.get_height(), 1)
-        popover.set_pointing_to(anchor)
+        popover.set_pointing_to(self._line_end_rect(line))
         mark = self.buffer.create_mark(None, self.buffer.get_iter_at_line(line)[1], True)
 
         def on_apply(*_):
@@ -635,17 +630,7 @@ class EditorTab(Adw.Bin):
         box.append(buttons)
         popover.set_child(box)
         popover.set_parent(self.editor_box)
-        anchor = self._cursor_rect()
-        if match := org.TAGS_RE.search(heading.rstrip()):
-            iterator = self.buffer.get_iter_at_line_offset(line, match.start(1))[1]
-            location = self.view.get_iter_location(iterator)
-            x, y = self.view.buffer_to_window_coords(
-                Gtk.TextWindowType.WIDGET, location.x, location.y)
-            _ok, point = self.view.compute_point(
-                self.editor_box, Graphene.Point().init(x, y))
-            anchor.x, anchor.y = int(point.x), int(point.y)
-            anchor.width, anchor.height = max(location.width, 1), location.height
-        popover.set_pointing_to(anchor)
+        popover.set_pointing_to(self._line_end_rect(line))
 
         def validate(*_):
             try:
@@ -791,7 +776,7 @@ class EditorTab(Adw.Bin):
         popover = DatePopover("Timestamp", initial, allow_remove=False)
         self._active_date_popover = popover
         popover.set_parent(self.editor_box)
-        popover.set_pointing_to(self._cursor_rect())
+        popover.set_pointing_to(self._line_end_rect(cursor.get_line()))
 
         def on_apply(_popover, timestamp):
             first = buf.get_iter_at_mark(start_mark)
@@ -849,7 +834,7 @@ class EditorTab(Adw.Bin):
                               org.get_planning(lines, idx, kind), today)
         self._active_date_popover = popover
         popover.set_parent(self.editor_box)
-        popover.set_pointing_to(self._cursor_rect())
+        popover.set_pointing_to(self._line_end_rect(self._cursor_line()))
 
         def on_apply(_popover, ts):
             current = self.get_text().split("\n")
@@ -883,7 +868,16 @@ class EditorTab(Adw.Bin):
             self._active_date_popover.popdown()
 
     def _cursor_rect(self):
-        location = self.view.get_iter_location(self.buffer.get_iter_at_mark(self.buffer.get_insert()))
+        return self._iter_rect(self.buffer.get_iter_at_mark(self.buffer.get_insert()))
+
+    def _line_end_rect(self, line):
+        iterator = self.buffer.get_iter_at_line(line)[1]
+        if not iterator.ends_line():
+            iterator.forward_to_line_end()
+        return self._iter_rect(iterator)
+
+    def _iter_rect(self, iterator):
+        location = self.view.get_iter_location(iterator)
         x, y = self.view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, location.x, location.y)
         _ok, point = self.view.compute_point(self.editor_box, Graphene.Point().init(x, y))
         rect = Gdk.Rectangle()

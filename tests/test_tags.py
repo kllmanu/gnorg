@@ -110,7 +110,7 @@ class TagTests(EditorTestCase):
         tab.buffer.insert(tab.buffer.get_end_iter(), "A genuinely long line " * 100)
         self.wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size())
 
-    def test_keyboard_tag_editor_anchors_to_tags_not_cursor(self):
+    def test_keyboard_tag_editor_anchors_to_line_end_not_cursor(self):
         tab = self.app.new_tab()
         tab.buffer.set_text("* Heading :work:\n")
         tab.buffer.place_cursor(tab.buffer.get_start_iter())
@@ -119,9 +119,10 @@ class TagTests(EditorTestCase):
                       and tab.org_tag_align._hover_regions[0][0] > 100)
         popover, _entry = self.open_heading_tags(tab)
         _ok, anchor = popover.get_pointing_to()
-        left, top, _right, _bottom = tab.org_tag_align._hover_regions[0]
+        _left, top, right, _bottom = tab.org_tag_align._hover_regions[0]
         _ok, point = tab.view.compute_point(
-            tab.editor_box, Graphene.Point().init(left, top))
+            tab.editor_box, Graphene.Point().init(
+                right - 4 - max(tab.org_tag_align.buttons[0].get_width(), 24), top))
         self.assertAlmostEqual(anchor.x, point.x, delta=2)
         self.assertAlmostEqual(anchor.y, point.y, delta=2)
         self.assertGreater(anchor.x, tab._cursor_rect().x + 100)
@@ -142,7 +143,8 @@ class TagTests(EditorTestCase):
         self.assertEqual(entry.get_text(), "home")
         _ok, anchor = tab._active_tag_popover.get_pointing_to()
         _ok, point = tab.view.compute_point(
-            tab.editor_box, Graphene.Point().init(left, top))
+            tab.editor_box, Graphene.Point().init(
+                right - 4 - max(tab.org_tag_align.buttons[1].get_width(), 24), top))
         self.assertAlmostEqual(anchor.x, point.x, delta=2)
         self.assertAlmostEqual(anchor.y, point.y, delta=2)
         self.assertGreater(anchor.x, tab._cursor_rect().x + 100)

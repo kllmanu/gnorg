@@ -120,6 +120,7 @@
       <start>^\*+[ \t]+(DONE)(?=[ \t]|$)</start>
       <include>
         <context sub-pattern="1" where="start" style-ref="done"/>
+        <context ref="progress-cookie"/>
         <context ref="tags"/>
         <context ref="emphasis"/>
       </include>
